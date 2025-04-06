@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ConceptMap SaaS - Generador de Mapas Conceptuales</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked@5.0.2/marked.min.js"></script>
+</head>
+<body>
+    <header class="app-header">
+        <div class="logo-container">
+            <div class="logo">
+                <img src="https://via.placeholder.com/50" alt="Logo" width="50" height="50">
+            </div>
+            <h1>ConceptMap<span>SaaS</span></h1>
+        </div>
+        <nav>
+            <ul>
+                <li><a href="#" class="active">Inicio</a></li>
+                <li><a href="#features">Características</a></li>
+                <li><a href="#pricing">Precios</a></li>
+                <li><a href="#docs">Documentación</a></li>
+                <li><a href="#" class="btn-login">Iniciar Sesión</a></li>
+            </ul>
+        </nav>
+    </header>
+
+    <main>
+        <section class="hero">
+            <div class="hero-content">
+                <h1>Transforma Texto en Mapas Conceptuales Inteligentes</h1>
+                <p>Utilizando un proceso de 6 etapas con tecnología avanzada para crear mapas conceptuales precisos, jerárquicos y visualmente atractivos.</p>
+                <div class="cta-buttons">
+                    <button class="btn-primary">Comenzar Gratis</button>
+                    <button class="btn-secondary">Ver Demo</button>
+                </div>
+            </div>
+            <div class="hero-image">
+                <img src="https://via.placeholder.com/500x300" alt="Hero Image" style="width: 100%; height: auto;">
+            </div>
+        </section>
+
+        <section class="app-container">
+            <div class="sidebar">
+                <h3>Configuración</h3>
+                <div class="config-group">
+                    <label for="process-stages">Etapas de Procesamiento</label>
+                    <div class="checkbox-group">
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="stage1" checked>
+                            <label for="stage1">1. Organización y Jerarquía</label>
+                            <span class="tooltip" title="Estructura la información en niveles lógicos usando LangGraph, Penrose, spaCy y Haystack">ℹ️</span>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="stage2" checked>
+                            <label for="stage2">2. Razonamiento y Comprensión</label>
+                            <span class="tooltip" data-tippy-content="Procesa semánticamente el contenido con DeepSeek API, OpenAGI, GraphRAG">ℹ️</span>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="stage3" checked>
+                            <label for="stage3">3. Enriquecimiento Semántico</label>
+                            <span class="tooltip" data-tippy-content="Amplía conceptos con información contextual usando Semantic Kernel, Wikidata Toolkit">ℹ️</span>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="stage4" checked>
+                            <label for="stage4">4. Validación y Verificación</label>
+                            <span class="tooltip" data-tippy-content="Asegura la coherencia lógica y precisión con Arguflow, Trieve, DePlot">ℹ️</span>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="stage5" checked>
+                            <label for="stage5">5. Estética Adaptativa</label>
+                            <span class="tooltip" data-tippy-content="Optimiza la presentación visual con Markmap, Open Props, Lottie">ℹ️</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="config-group">
+                    <label for="visual-style">Estilo Visual</label>
+                    <select id="visual-style">
+                        <option value="professional">Profesional</option>
+                        <option value="sketch">Sketch</option>
+                        <option value="minimalist">Minimalista</option>
+                        <option value="colorful">Colorido</option>
+                    </select>
+                </div>
+                
+                <div class="config-group">
+                    <label for="complexity">Complejidad</label>
+                    <input type="range" id="complexity" min="1" max="5" value="3">
+                    <div class="range-labels">
+                        <span>Simple</span>
+                        <span>Complejo</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="content-area">
+                <div class="tabs">
+                    <button class="tab-btn active" data-tab="input">Entrada de Texto</button>
+                    <button class="tab-btn" data-tab="output">Mapa Conceptual</button>
+                </div>
+                
+                <div class="tab-content active" id="input-tab">
+                    <div class="text-input-container">
+                        <textarea id="text-input" placeholder="Pega o escribe aquí el texto que deseas convertir en un mapa conceptual..."></textarea>
+                        <div class="action-buttons">
+                            <button id="clear-btn">Limpiar</button>
+                            <button id="generate-btn" class="btn-primary">Generar Mapa Conceptual</button>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="tab-content" id="output-tab">
+                    <div class="output-actions">
+                        <button id="download-btn">Descargar</button>
+                        <button id="share-btn">Compartir</button>
+                        <button id="edit-btn">Editar</button>
+                    </div>
+                    <div id="markmap-container"></div>
+                </div>
+            </div>
+        </section>
+
+        <section id="features" class="features">
+            <h2>Características Principales</h2>
+            <div class="features-grid">
+                <div class="feature-card">
+                    <div class="feature-icon">🎯</div>
+                    <h3>Organización y Jerarquía</h3>
+                    <p>Estructura lógica basada en LangGraph, Penrose y spaCy para crear jerarquías conceptuales precisas.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🧠</div>
+                    <h3>Razonamiento y Comprensión</h3>
+                    <p>Análisis semántico profundo con DeepSeek API y GraphRAG para entender relaciones conceptuales.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🔗</div>
+                    <h3>Enriquecimiento Semántico</h3>
+                    <p>Ampliación de conceptos con definiciones, ejemplos y contexto usando Semantic Kernel y ConceptNet.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🔍</div>
+                    <h3>Validación y Verificación</h3>
+                    <p>Verificación de coherencia lógica y precisión conceptual con Arguflow y Trieve.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🎨</div>
+                    <h3>Estética Adaptativa</h3>
+                    <p>Visualización optimizada con Markmap, Open Props y elementos interactivos para mejorar la experiencia.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">✅</div>
+                    <h3>Procesamiento Integral</h3>
+                    <p>Verificación final que asegura la correcta implementación de todas las etapas anteriores.</p>
+                </div>
+            </div>
+        </section>
+
+        <section id="pricing" class="pricing">
+            <h2>Planes y Precios</h2>
+            <div class="pricing-cards">
+                <div class="pricing-card">
+                    <div class="pricing-header">
+                        <h3>Básico</h3>
+                        <div class="price">Gratis</div>
+                    </div>
+                    <ul class="pricing-features">
+                        <li>✅ 5 mapas conceptuales por mes</li>
+                        <li>✅ Procesamiento básico (3 etapas)</li>
+                        <li>✅ Exportación en PNG</li>
+                        <li>❌ Sin enriquecimiento semántico</li>
+                        <li>❌ Sin validación avanzada</li>
+                    </ul>
+                    <button class="btn-primary">Comenzar Gratis</button>
+                </div>
+                <div class="pricing-card featured">
+                    <div class="pricing-header">
+                        <h3>Profesional</h3>
+                        <div class="price">$19.99<span>/mes</span></div>
+                    </div>
+                    <ul class="pricing-features">
+                        <li>✅ 50 mapas conceptuales por mes</li>
+                        <li>✅ Procesamiento completo (6 etapas)</li>
+                        <li>✅ Exportación en PNG, SVG, PDF</li>
+                        <li>✅ Enriquecimiento semántico</li>
+                        <li>✅ Validación avanzada</li>
+                    </ul>
+                    <button class="btn-primary">Elegir Plan</button>
+                </div>
+                <div class="pricing-card">
+                    <div class="pricing-header">
+                        <h3>Empresarial</h3>
+                        <div class="price">$49.99<span>/mes</span></div>
+                    </div>
+                    <ul class="pricing-features">
+                        <li>✅ Mapas ilimitados</li>
+                        <li>✅ Procesamiento completo personalizable</li>
+                        <li>✅ Todas las opciones de exportación</li>
+                        <li>✅ API para integración</li>
+                        <li>✅ Soporte prioritario</li>
+                    </ul>
+                    <button class="btn-primary">Contactar Ventas</button>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <div class="footer-content">
+            <div class="footer-logo">
+                <h3>ConceptMap<span>SaaS</span></h3>
+                <p>Transformando texto en conocimiento estructurado</p>
+            </div>
+            <div class="footer-links">
+                <div class="footer-column">
+                    <h4>Producto</h4>
+                    <ul>
+                        <li><a href="#">Características</a></li>
+                        <li><a href="#">Precios</a></li>
+                        <li><a href="#">Casos de uso</a></li>
+                        <li><a href="#">Testimonios</a></li>
+                    </ul>
+                </div>
+                <div class="footer-column">
+                    <h4>Recursos</h4>
+                    <ul>
+                        <li><a href="#">Documentación</a></li>
+                        <li><a href="#">API</a></li>
+                        <li><a href="#">Blog</a></li>
+                        <li><a href="#">Tutoriales</a></li>
+                    </ul>
+                </div>
+                <div class="footer-column">
+                    <h4>Empresa</h4>
+                    <ul>
+                        <li><a href="#">Acerca de</a></li>
+                        <li><a href="#">Contacto</a></li>
+                        <li><a href="#">Privacidad</a></li>
+                        <li><a href="#">Términos</a></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <div class="footer-bottom">
+            <p>&copy; 2025 ConceptMapSaaS. Todos los derechos reservados.</p>
+        </div>
+    </footer>
+
+    <script src="app.js"></script>
+    <script>
+        // Inicializar tooltips nativos del navegador
+        document.querySelectorAll('.tooltip').forEach(el => {
+            el.style.cursor = 'help';
+        });
+    </script>
+</body>
+</html>
