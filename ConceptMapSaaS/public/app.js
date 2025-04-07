@@ -78,11 +78,11 @@ document.addEventListener('DOMContentLoaded', function() {
             const data = await response.json();
             
             if (data.success) {
-                // Guardar los datos del mapa
-                currentMapData = data.markmapContent;
+                // Guardar los datos del mapa - accediendo a la estructura correcta
+                currentMapData = data.result.content;
                 
                 // Renderizar el mapa conceptual
-                renderMarkmap(data.markmapContent);
+                renderMarkmap(data.result.content);
                 
                 // Cambiar a la pestaña de salida
                 document.querySelector('[data-tab="output"]').click();
@@ -144,55 +144,119 @@ document.addEventListener('DOMContentLoaded', function() {
         document.querySelector('[data-tab="input"]').click();
     });
     
-    // Función para renderizar el mapa conceptual usando D3
+    // Función para renderizar el mapa conceptual usando Mermaid
     function renderMarkmap(content) {
         // Limpiar el contenedor
         markmapContainer.innerHTML = '';
         
-        // Parsear el contenido markdown en HTML
-        const htmlContent = marked.parse(content);
-        
-        // Crear un elemento div para mostrar el contenido
-        const div = document.createElement('div');
-        div.className = 'simple-concept-map';
-        div.innerHTML = htmlContent;
-        markmapContainer.appendChild(div);
-        
-        // Añadir estilos básicos para simular un mapa conceptual
-        const style = document.createElement('style');
-        style.textContent = `
-            .simple-concept-map {
-                padding: 20px;
-                overflow: auto;
-                height: 100%;
-                font-family: var(--font-sans);
+        try {
+            // Parsear el contenido markdown en HTML
+            const htmlContent = marked.parse(content);
+            
+            // Crear un elemento div para mostrar el contenido
+            const div = document.createElement('div');
+            div.className = 'concept-map-container';
+            div.innerHTML = htmlContent;
+            markmapContainer.appendChild(div);
+            
+            // Extraer código Mermaid del contenido HTML
+            let mermaidCode = '';
+            const mermaidDivs = div.querySelectorAll('code');
+            mermaidDivs.forEach((mermaidDiv) => {
+                if (mermaidDiv.parentElement.tagName === 'PRE' && mermaidDiv.textContent.includes('graph TD')) {
+                    mermaidCode = mermaidDiv.textContent.trim();
+                    // Eliminar el bloque de código original
+                    mermaidDiv.parentElement.remove();
+                }
+            });
+            
+            // Si encontramos código Mermaid, creamos un contenedor dedicado para él
+            if (mermaidCode) {
+                // Crear un contenedor para el diagrama Mermaid
+                const mermaidContainer = document.createElement('div');
+                mermaidContainer.id = 'mermaid-concept-map';
+                mermaidContainer.className = 'mermaid-container';
+                div.appendChild(mermaidContainer);
+                
+                // Reinicializar Mermaid con configuración optimizada para mapas conceptuales
+                mermaid.initialize({
+                    startOnLoad: false,
+                    securityLevel: 'loose',
+                    theme: 'default',
+                    fontFamily: 'var(--font-sans)',
+                    flowchart: {
+                        htmlLabels: true,
+                        curve: 'linear',
+                        useMaxWidth: true,
+                        rankSpacing: 150,
+                        nodeSpacing: 100,
+                        padding: 15
+                    }
+                });
+                
+                // Renderizar el diagrama Mermaid
+                mermaid.render('concept-map-svg', mermaidCode)
+                    .then(result => {
+                        mermaidContainer.innerHTML = result.svg;
+                    })
+                    .catch(err => {
+                        console.error('Error al renderizar Mermaid:', err);
+                        mermaidContainer.innerHTML = `
+                            <div class="error-message">
+                                <p>Error al renderizar el mapa conceptual.</p>
+                                <p><strong>Detalle técnico:</strong> ${err.message || 'Error desconocido'}</p>
+                            </div>
+                        `;
+                    });
             }
-            .simple-concept-map h1 {
-                color: #4f46e5;
-                text-align: center;
-                margin-bottom: 20px;
-            }
-            .simple-concept-map h2 {
-                color: #f59e0b;
-                margin-left: 20px;
-                margin-top: 15px;
-            }
-            .simple-concept-map h3 {
-                color: #10b981;
-                margin-left: 40px;
-            }
-            .simple-concept-map h4 {
-                color: #ef4444;
-                margin-left: 60px;
-            }
-            .simple-concept-map ul, .simple-concept-map ol {
-                margin-left: 20px;
-            }
-            .simple-concept-map li {
-                margin: 5px 0;
-            }
-        `;
-        document.head.appendChild(style);
+            
+            // Añadir estilos adicionales para el mapa conceptual
+            const style = document.createElement('style');
+            style.textContent = `
+                .concept-map-container {
+                    padding: 20px;
+                    overflow: auto;
+                    height: 100%;
+                    font-family: var(--font-sans);
+                }
+                .concept-map-container h1 {
+                    color: #4f46e5;
+                    text-align: center;
+                    margin-bottom: 20px;
+                }
+                .mermaid-container {
+                    overflow: auto;
+                    margin: 0 auto;
+                    text-align: center;
+                    padding: 20px 0;
+                    width: 100%;
+                }
+                .mermaid-container svg {
+                    max-width: 100%;
+                    height: auto;
+                    margin: 0 auto;
+                    display: block;
+                }
+                .error-message {
+                    color: #e53e3e;
+                    background-color: #fff5f5;
+                    border: 1px solid #fc8181;
+                    border-radius: 5px;
+                    padding: 15px;
+                    margin: 20px 0;
+                    text-align: left;
+                }
+            `;
+            document.head.appendChild(style);
+        } catch (error) {
+            console.error('Error al renderizar el mapa conceptual:', error);
+            markmapContainer.innerHTML = `
+                <div class="error-message">
+                    <p>Error al procesar el contenido del mapa conceptual.</p>
+                    <p><strong>Detalle técnico:</strong> ${error.message || 'Error desconocido'}</p>
+                </div>
+            `;
+        }
     }
     
     // Función para mostrar notificaciones

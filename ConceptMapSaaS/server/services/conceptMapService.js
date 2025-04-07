@@ -985,7 +985,7 @@ class ConceptMapService {
    * Genera el contenido del mapa conceptual en formato educativo
    * @param {Object} result - Resultado del procesamiento
    * @param {Object} config - Configuración
-   * @returns {string} - Contenido en formato markdown estructurado
+   * @returns {string} - Contenido en formato markdown estructurado que sigue las pautas de jerarquización, síntesis e impacto visual
    */
   generateEducationalConceptMap(result, config) {
     // Agrupar conceptos por nivel para organización jerárquica
@@ -997,107 +997,193 @@ class ConceptMapService {
       conceptsByLevel[concept.level].push(concept);
     });
     
+    // Ordenar conceptos por importancia dentro de cada nivel
+    Object.keys(conceptsByLevel).forEach(level => {
+      conceptsByLevel[level].sort((a, b) => b.importance - a.importance);
+    });
+    
     // Obtener emojis para conceptos (si están disponibles)
     const emojis = result.conceptEmojis || {};
     
-    // Iniciar con título principal
-    let content = '# Mapa Conceptual\n\n';
+    // Crear mapa en formato visual con Mermaid (diagrama de flujo)
+    let content = '# MAPA CONCEPTUAL\n\n';
+    content += '```mermaid\ngraph TD;\n';
     
-    // Generar conceptos de Nivel 0 (principales)
-    if (conceptsByLevel[0]) {
-      conceptsByLevel[0].forEach(mainConcept => {
-        // Obtener emoji para este concepto principal
-        const emoji = emojis[mainConcept.id] || '';
+    // Asignar colores por nivel
+    const nodeColors = {
+      0: '#f5923e', // Naranja para nivel principal
+      1: '#f5a052', // Naranja más claro para nivel 1
+      2: '#f7b474', // Naranja aún más claro para nivel 2
+      3: '#f9c696'  // Naranja muy claro para nivel 3
+    };
+    
+    // Estilo para los nodos
+    content += '    %% Estilos de nodos por nivel\n';
+    content += '    classDef nivel0 fill:#f5923e,stroke:#d97b29,color:black,font-weight:bold,font-size:18px;\n';
+    content += '    classDef nivel1 fill:#f5a052,stroke:#d97b29,color:black,font-weight:bold,font-size:16px;\n';
+    content += '    classDef nivel2 fill:#f7b474,stroke:#d97b29,color:black,font-size:14px;\n';
+    content += '    classDef nivel3 fill:#f9c696,stroke:#d97b29,color:black,font-size:13px;\n';
+    
+    // Añadir indicadores de nivel
+    if (Object.keys(conceptsByLevel).length > 1) {
+      content += '    %% Indicadores de nivel\n';
+      content += '    NIVEL1["NIVEL 1"] --> FLECHA1{"➡️"};\n';
+      content += '    NIVEL2["NIVEL 2"] --> FLECHA2{"➡️"};\n';
+      content += '    NIVEL3["NIVEL 3"] --> FLECHA3{"➡️"};\n';
+      content += '    class NIVEL1,NIVEL2,NIVEL3 nivel0;\n';
+    }
+    
+    // Mapeo de IDs para evitar caracteres problemáticos en Mermaid
+    const idMap = new Map();
+    let idCounter = 0;
+    
+    // Función para obtener un ID válido para Mermaid
+    const getValidId = (concept) => {
+      if (!idMap.has(concept.id)) {
+        idMap.set(concept.id, `node${idCounter++}`);
+      }
+      return idMap.get(concept.id);
+    };
+    
+    // Generar concepto de nivel 0 (principal/título)
+    if (conceptsByLevel[0] && conceptsByLevel[0].length > 0) {
+      const mainConcept = conceptsByLevel[0][0]; // Tomar el concepto principal más importante
+      const mainId = getValidId(mainConcept);
+      
+      // Título principal siempre en mayúsculas
+      const mainName = (mainConcept.originalForm || mainConcept.name).toUpperCase();
+      content += `    ${mainId}["${mainName}"];\n`;
+      content += `    class ${mainId} nivel0;\n\n`;
+      
+      // Si hay más de un concepto principal, agregar el modificador "formado por"
+      if (conceptsByLevel[1] && conceptsByLevel[1].length > 0) {
+        content += `    %% Conexión con nivel 1\n`;
         
-        // Aplicar negrita si está configurado para resaltar
-        const conceptName = mainConcept.formatting?.bold ? 
-          `**${mainConcept.originalForm || mainConcept.name}**` : 
-          mainConcept.originalForm || mainConcept.name;
+        // Conectar con cada concepto de nivel 1 individualmente (evitando el operador &)
+        conceptsByLevel[1].forEach(subConcept => {
+          const subId = getValidId(subConcept);
+          content += `    ${mainId} -->|"formado por"| ${subId};\n`;
+        });
+        content += '\n';
+      }
+    }
+    
+    // Generar conceptos de nivel 1
+    if (conceptsByLevel[1]) {
+      content += `    %% Conceptos de nivel 1\n`;
+      
+      conceptsByLevel[1].forEach(concept => {
+        const conceptId = getValidId(concept);
+        // Nombre en mayúsculas para nivel 1
+        const conceptName = (concept.originalForm || concept.name).charAt(0).toUpperCase() + 
+                           (concept.originalForm || concept.name).slice(1);
         
-        // Título del concepto principal con emoji
-        content += `## ${emoji} ${conceptName}\n\n`;
+        content += `    ${conceptId}["${conceptName}"];\n`;
+        content += `    class ${conceptId} nivel1;\n`;
         
-        // Añadir definición del concepto principal
-        if (mainConcept.definition) {
-          content += `${mainConcept.definition}\n\n`;
-        }
-        
-        // Obtener relaciones para este concepto principal
-        const relations = result.relationships.filter(rel => rel.source === mainConcept.id);
-        
-        // Procesar conceptos secundarios (Nivel 1) relacionados con este concepto principal
-        const relatedSubconcepts = conceptsByLevel[1]?.filter(subConcept => 
-          relations.some(rel => rel.target === subConcept.id)
+        // Agregar texto "su función es" para conceptos de nivel 1 que estén conectados a nivel 2
+        const childRelations = result.relationships.filter(rel => rel.source === concept.id);
+        // Obtener conceptos hijos de nivel 2
+        const childConcepts = conceptsByLevel[2]?.filter(child => 
+          childRelations.some(rel => rel.target === child.id)
         ) || [];
         
-        relatedSubconcepts.forEach(subConcept => {
-          // Encontrar la relación específica entre el concepto principal y este subconcepto
-          const relation = relations.find(rel => rel.target === subConcept.id);
-          
-          // Obtener emoji para este subconcepto
-          const subEmoji = emojis[subConcept.id] || '';
-          
-          // Aplicar formato al nombre del subconcepto
-          let subConceptName = subConcept.originalForm || subConcept.name;
-          if (subConcept.formatting?.bold) subConceptName = `**${subConceptName}**`;
-          if (subConcept.formatting?.underline) subConceptName = `<u>${subConceptName}</u>`;
-          
-          // Añadir subconcepto con su relación al concepto principal
-          content += `### ${subEmoji} ${subConceptName}\n\n`;
-          
-          // Indicar la relación con el concepto principal
-          if (relation) {
-            content += `*${relation.type}* ${mainConcept.name}\n\n`;
-          }
-          
-          // Añadir definición del subconcepto
-          if (subConcept.definition) {
-            content += `${subConcept.definition}\n\n`;
-          }
-          
-          // Añadir ejemplos si existen
-          if (subConcept.examples && subConcept.examples.length > 0) {
-            content += `**Ejemplos:**\n`;
-            subConcept.examples.forEach(example => {
-              content += `- ${example}\n`;
-            });
-            content += '\n';
-          }
-          
-          // Procesar conceptos terciarios (Nivel 2) relacionados con este subconcepto
-          const subRelations = result.relationships.filter(rel => rel.source === subConcept.id);
-          const relatedDetails = conceptsByLevel[2]?.filter(detail => 
-            subRelations.some(rel => rel.target === detail.id)
-          ) || [];
-          
-          if (relatedDetails.length > 0) {
-            content += `**Detalles relacionados:**\n`;
+        // Conectar con cada hijo individualmente (evitando operadores &)
+        if (childConcepts.length > 0) {
+          childConcepts.forEach(childConcept => {
+            const childId = getValidId(childConcept);
+            content += `    ${conceptId} -->|"su función es"| ${childId};\n`;
+          });
+        }
+      });
+      content += '\n';
+    }
+    
+    // Generar conceptos de nivel 2
+    if (conceptsByLevel[2]) {
+      content += `    %% Conceptos de nivel 2\n`;
+      
+      conceptsByLevel[2].forEach(concept => {
+        const conceptId = getValidId(concept);
+        // Primera letra en mayúscula para nivel 2
+        const conceptName = (concept.originalForm || concept.name).charAt(0).toUpperCase() + 
+                           (concept.originalForm || concept.name).slice(1);
+        
+        content += `    ${conceptId}["${conceptName}"];\n`;
+        content += `    class ${conceptId} nivel2;\n`;
+        
+        // Agregar conexiones con nivel 3 si existen
+        const childRelations = result.relationships.filter(rel => rel.source === concept.id);
+        const childConcepts = conceptsByLevel[3]?.filter(child => 
+          childRelations.some(rel => rel.target === child.id)
+        ) || [];
+        
+        if (childConcepts.length > 0) {
+          // Determinar el tipo de conector basado en la relación
+          childConcepts.forEach(childConcept => {
+            const relation = childRelations.find(rel => rel.target === childConcept.id);
+            const childId = getValidId(childConcept);
             
-            relatedDetails.forEach(detail => {
-              // Encontrar la relación específica
-              const detailRelation = subRelations.find(rel => rel.target === detail.id);
-              
-              // Aplicar formato al nombre del detalle
-              let detailName = detail.originalForm || detail.name;
-              if (detail.formatting?.bold) detailName = `**${detailName}**`;
-              
-              // Añadir detalle con su relación
-              content += `- **${detailName}**: `;
-              if (detailRelation) {
-                content += `*${detailRelation.type}* ${subConcept.name}`;
+            // Texto de la relación (usar "el" o "los" según el contexto)
+            let relationText = '';
+            // Simplificación: usar artículos específicos según contexto pero mantener simplicidad
+            if (relation && relation.type) {
+              relationText = relation.type.toLowerCase();
+              if (!relationText.startsWith('se ') && !relationText.startsWith('el ') && 
+                 !relationText.startsWith('la ') && !relationText.startsWith('los ') && 
+                 !relationText.startsWith('las ')) {
+                // Si no tiene artículo, agregar "el" como predeterminado
+                relationText = `el ${relationText}`;
               }
-              content += '\n';
-            });
-            content += '\n';
-          }
-          
-          // Añadir términos relacionados si existen
-          if (subConcept.relatedTerms && subConcept.relatedTerms.length > 0) {
-            content += `**Términos relacionados:** ${subConcept.relatedTerms.join(', ')}\n\n`;
+            } else {
+              relationText = childConcept.name.includes('s') ? 'los' : 'el';
+            }
+            
+            content += `    ${conceptId} -->|"${relationText}"| ${childId};\n`;
+          });
+        }
+      });
+      content += '\n';
+    }
+    
+    // Generar conceptos de nivel 3
+    if (conceptsByLevel[3]) {
+      content += `    %% Conceptos de nivel 3\n`;
+      
+      conceptsByLevel[3].forEach(concept => {
+        const conceptId = getValidId(concept);
+        // Primera letra en mayúscula para nivel 3
+        const conceptName = (concept.originalForm || concept.name).charAt(0).toUpperCase() + 
+                           (concept.originalForm || concept.name).slice(1);
+        
+        content += `    ${conceptId}["${conceptName}"];\n`;
+        content += `    class ${conceptId} nivel3;\n`;
+        
+        // Añadir conexiones "se convierte" entre conceptos de nivel 3 si existen
+        const relationships = result.relationships.filter(rel => 
+          rel.source === concept.id && 
+          conceptsByLevel[3].some(c => c.id === rel.target)
+        );
+        
+        relationships.forEach(relation => {
+          const targetConcept = result.concepts.find(c => c.id === relation.target);
+          if (targetConcept) {
+            const targetId = getValidId(targetConcept);
+            let relationText = relation.type || 'se convierte';
+            content += `    ${conceptId} -->|"${relationText}"| ${targetId};\n`;
           }
         });
       });
     }
+    
+    // Cerrar diagrama Mermaid
+    content += '```\n\n';
+    
+    // Agregar nota sobre la estructura
+    content += '**Nota:** Este mapa conceptual presenta una estructura jerárquica de ' + 
+              Object.keys(conceptsByLevel).length + ' niveles, organizados de mayor a menor ' +
+              'especificidad, con ' + result.concepts.length + ' conceptos clave y ' + 
+              result.relationships.length + ' relaciones entre ellos.\n\n';
     
     return content;
   }
