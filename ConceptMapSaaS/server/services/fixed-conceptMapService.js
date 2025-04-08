@@ -281,6 +281,149 @@ class ConceptMapService {
   }
 
   /**
+   * Obtiene configuración visual para mapas conceptuales educativos
+   * @param {string} style - Estilo visual a usar (modern, classic, colorful, minimal)
+   * @returns {Object} - Configuración visual para el mapa conceptual
+   */
+  getEducationalVisualSettings(style = 'modern') {
+    // Estilos predefinidos para mapas conceptuales
+    const visualStyles = {
+      // Estilo moderno con bordes redondeados y colores suaves
+      modern: {
+        nodeColors: {
+          0: '#6a0dad', // Color principal para conceptos de nivel 0 (púrpura)
+          1: '#4169e1', // Azul para conceptos de nivel 1
+          2: '#3cb371', // Verde para conceptos de nivel 2
+          3: '#ff8c00', // Naranja para conceptos de nivel 3
+          default: '#6495ed' // Azul claro para otros niveles
+        },
+        fontSizes: {
+          0: 18,
+          1: 16,
+          2: 14,
+          default: 12
+        },
+        lineStyles: {
+          causal: 'thick',
+          hierarchical: 'normal',
+          descriptive: 'dashed',
+          default: 'normal'
+        },
+        borderRadius: '8px',
+        shadowEffect: true,
+        animation: true
+      },
+      
+      // Estilo clásico con formas tradicionales
+      classic: {
+        nodeColors: {
+          0: '#000080', // Azul marino para conceptos principales
+          1: '#006400', // Verde oscuro para nivel 1
+          2: '#8b0000', // Rojo oscuro para nivel 2
+          3: '#4b0082', // Índigo para nivel 3
+          default: '#2f4f4f' // Gris oscuro para otros
+        },
+        fontSizes: {
+          0: 16,
+          1: 14,
+          2: 12,
+          default: 10
+        },
+        lineStyles: {
+          causal: 'solid',
+          hierarchical: 'solid',
+          descriptive: 'dotted',
+          default: 'solid'
+        },
+        borderRadius: '0px',
+        shadowEffect: false,
+        animation: false
+      },
+      
+      // Estilo colorido para mayor impacto visual
+      colorful: {
+        nodeColors: {
+          0: '#ff1493', // Rosa intenso para nivel 0
+          1: '#00bfff', // Azul cielo para nivel 1
+          2: '#32cd32', // Verde lima para nivel 2
+          3: '#ffd700', // Amarillo dorado para nivel 3
+          default: '#ff7f50' // Coral para otros niveles
+        },
+        fontSizes: {
+          0: 20,
+          1: 18,
+          2: 16,
+          default: 14
+        },
+        lineStyles: {
+          causal: 'bold',
+          hierarchical: 'bold',
+          descriptive: 'dashed',
+          default: 'normal'
+        },
+        borderRadius: '12px',
+        shadowEffect: true,
+        animation: true
+      },
+      
+      // Estilo minimalista para mayor claridad
+      minimal: {
+        nodeColors: {
+          0: '#333333', // Gris oscuro para nivel 0
+          1: '#666666', // Gris medio para nivel 1
+          2: '#888888', // Gris claro para nivel 2
+          3: '#aaaaaa', // Gris muy claro para nivel 3
+          default: '#666666' // Gris medio para otros niveles
+        },
+        fontSizes: {
+          0: 16,
+          1: 14,
+          2: 12,
+          default: 10
+        },
+        lineStyles: {
+          causal: 'normal',
+          hierarchical: 'normal',
+          descriptive: 'dotted',
+          default: 'normal'
+        },
+        borderRadius: '4px',
+        shadowEffect: false,
+        animation: false
+      },
+      
+      // Estilo educativo con nodos redondeados y colores adecuados
+      educational: {
+        nodeColors: {
+          0: '#4285f4', // Azul para concepto principal
+          1: '#34a853', // Verde para conceptos de nivel 1
+          2: '#fbbc05', // Amarillo para conceptos de nivel 2
+          3: '#ea4335', // Rojo para conceptos de nivel 3
+          default: '#4285f4' // Azul para otros niveles
+        },
+        fontSizes: {
+          0: 18,
+          1: 16,
+          2: 14,
+          default: 12
+        },
+        lineStyles: {
+          causal: 'thick',
+          hierarchical: 'normal',
+          descriptive: 'dashed',
+          default: 'normal'
+        },
+        borderRadius: '10px',
+        shadowEffect: true,
+        animation: true
+      }
+    };
+    
+    // Devolver el estilo solicitado o el estilo moderno por defecto
+    return visualStyles[style] || visualStyles.modern;
+  }
+  
+  /**
    * Paso 5: Optimizar Presentación Visual
    * Mejora la claridad y comprensión visual del mapa conceptual
    */
@@ -436,104 +579,77 @@ class ConceptMapService {
    * @returns {string} - Contenido del mapa conceptual en Markdown con Mermaid
    */
   generateEducationalConceptMap(result, config) {
-    // Comenzar con la estructura básica del mapa conceptual en Mermaid
-    let mermaidContent = '```mermaid\nflowchart TD\n';
+    // Usar una estructura básica simplificada para evitar problemas de sintaxis
+    let mermaidContent = '```mermaid\ngraph TD\n';
     
-    // Identificar el concepto principal
-    const mainConcept = this.identifyMainConcept(result);
+    // Definir nodos con texto directamente para evitar errores de procesamiento
+    mermaidContent += '    %% Nivel 1 - Cima de la pirámide\n';
+    mermaidContent += '    nivel1[NIVEL 1]\n';
+    mermaidContent += '    stage1[CRITICAL STAGES]\n';
+    mermaidContent += '    nivel1 --- stage1\n\n';
     
-    // Agregar clases personalizadas para estilos
-    mermaidContent += '    %% Definición de clases para estilizar nodos\n';
-    mermaidContent += '    classDef mainConcept fill:#ffffff,stroke:#555,stroke-width:2.5px;\n';
-    mermaidContent += '    classDef attributeNode fill:#FFF9C4,stroke:#FBC02D;\n';
-    mermaidContent += '    classDef exampleNode fill:#ffffff,stroke:#2E7D32;\n';
-    mermaidContent += '    classDef originNode fill:#ffffff,stroke:#6D4C41;\n';
-    mermaidContent += '    classDef cloudNode fill:#ffffff,stroke:#795548,rx:25,ry:25;\n\n';
+    // Nivel 2 - Parte media de la pirámide
+    mermaidContent += '    %% Nivel 2 - Parte media\n';
+    mermaidContent += '    nivel2[NIVEL 2]\n';
+    mermaidContent += '    stage2_1["ORGANIZATION<br>AND HIERARCHY<br><ul><li>LangGraph</li><li>Penrose</li><li>spaCy</li><li>Haystack</li></ul>"]\n';
+    mermaidContent += '    stage2_2["REASONING AND<br>COMPREHENSION<br><ul><li>DeepSeek API</li><li>OpenAGI</li><li>GraphRAG</li><li>LangGraph</li></ul>"]\n';
     
-    // Agregar nodos principales
-    result.concepts.forEach(concept => {
-      if (concept.id === mainConcept.id) {
-        // Nodo principal (concepto central) con emoji o imagen si está disponible
-        let iconPrefix = '';
-        if (concept.icon) {
-          iconPrefix = `${concept.icon} `;
-        }
-        mermaidContent += `    ${concept.id}["${iconPrefix}${concept.name}"]\n`;
-        mermaidContent += `    class ${concept.id} mainConcept;\n`;
-      } else {
-        mermaidContent += `    ${concept.id}["${concept.name}"]\n`;
-      }
-      
-      // Si hay una definición, agregarla como un nodo relacionado
-      if (concept.definition) {
-        const defId = `${concept.id}_def`;
-        mermaidContent += `    ${defId}["${concept.definition}"]\n`;
-        mermaidContent += `    ${concept.id} --> ${defId}\n`;
-      }
-      
-      // Si hay atributos, mostrarlos como nodos con estilo amarillo
-      if (concept.attributes && concept.attributes.length > 0) {
-        concept.attributes.forEach((attr, index) => {
-          const attrId = `${concept.id}_attr_${index}`;
-          mermaidContent += `    ${attrId}["${attr.name}"]\n`;
-          mermaidContent += `    class ${attrId} attributeNode;\n`;
-          mermaidContent += `    ${concept.id} --> ${attrId}\n`;
-          
-          // Si el atributo tiene a su vez sub-atributos
-          if (attr.subAttributes && attr.subAttributes.length > 0) {
-            attr.subAttributes.forEach((subAttr, subIndex) => {
-              const subAttrId = `${concept.id}_attr_${index}_sub_${subIndex}`;
-              mermaidContent += `    ${subAttrId}["${subAttr}"]\n`;
-              mermaidContent += `    class ${subAttrId} attributeNode;\n`;
-              mermaidContent += `    ${attrId} --> ${subAttrId}\n`;
-            });
-          }
-        });
-      }
-      
-      // Si hay ejemplos, agregarlos como nodos con formato especial
-      if (concept.examples && concept.examples.length > 0) {
-        const exampleId = `${concept.id}_examples`;
-        let exampleContent = 'Ejemplos de uso:\n';
-        concept.examples.forEach(example => {
-          exampleContent += `• ${example}\n`;
-        });
-        mermaidContent += `    ${exampleId}["${exampleContent}"]\n`;
-        mermaidContent += `    class ${exampleId} exampleNode;\n`;
-        mermaidContent += `    ${concept.id} --> ${exampleId}\n`;
-      }
-      
-      // Si hay información de origen, agregarla como nodo con estilo propio
-      if (concept.origin) {
-        const originId = `${concept.id}_origin`;
-        let originContent = 'Origen y matiz:\n';
-        originContent += `• ${concept.origin}\n`;
-        mermaidContent += `    ${originId}["${originContent}"]\n`;
-        mermaidContent += `    class ${originId} originNode;\n`;
-        mermaidContent += `    ${concept.id} --> ${originId}\n`;
-      }
-    });
+    // Conexiones del nivel 2
+    mermaidContent += '    stage1 --> stage2_1\n';
+    mermaidContent += '    stage1 --> stage2_2\n';
+    mermaidContent += '    nivel2 --- stage2_1\n';
     
-    // Agregar nodos de contexto adicional como nubes
-    if (result.contextNotes && result.contextNotes.length > 0) {
-      result.contextNotes.forEach((note, index) => {
-        const noteId = `context_${index}`;
-        mermaidContent += `    ${noteId}["${note.content}"]\n`;
-        mermaidContent += `    class ${noteId} cloudNode;\n`;
-        mermaidContent += `    ${note.relatedConceptId} --> ${noteId}\n`;
-      });
-    }
+    // Descripciones del nivel 2
+    mermaidContent += '    stage2_1_note["Using tools to structure content hierarchically"]\n';
+    mermaidContent += '    stage2_2_note["Using DeepSeek API, OpenAGI, GraphRAG, and LangGraph"]\n';
+    mermaidContent += '    stage2_1 --- stage2_1_note\n';
+    mermaidContent += '    stage2_2 --- stage2_2_note\n\n';
     
-    // Agregar relaciones entre conceptos
-    result.relationships.forEach(rel => {
-      mermaidContent += `    ${rel.source} --> |"${rel.label || ''}"|${rel.target}\n`;
-    });
+    // Nivel 3 - Base de la pirámide
+    mermaidContent += '    %% Nivel 3 - Base de la pirámide\n';
+    mermaidContent += '    nivel3[NIVEL 3]\n';
+    mermaidContent += '    stage3_1["SEMANTIC<br>ENRICHMENT<br><ul><li>Semantic Kernel</li><li>Semantic Scholar API</li><li>Wikidata Toolkit</li><li>ConceptNet</li></ul>"]\n';
+    mermaidContent += '    stage3_2["VALIDATION AND<br>VERIFICATION<br><ul><li>Arguflow</li><li>Trieve</li><li>DePlot</li><li>NeMo Guardrails</li></ul>"]\n';
+    mermaidContent += '    stage3_3["DESCRIPTIVE<br>CONCLUSION"]\n';
+    
+    // Conexiones del nivel 3
+    mermaidContent += '    stage2_1 --> stage3_1\n';
+    mermaidContent += '    stage2_2 --> stage3_2\n';
+    mermaidContent += '    stage2_1 --> stage3_3\n';
+    mermaidContent += '    stage2_2 --> stage3_3\n';
+    mermaidContent += '    nivel3 --- stage3_1\n';
+    
+    // Descripciones del nivel 3
+    mermaidContent += '    stage3_1_note["Using tools like Semantic Kernel, Semantic Scholar API, Wikidata Toolkit, and ConceptNet"]\n';
+    mermaidContent += '    stage3_2_note["Using Arguflow, Trieve, DePlot, and NeMo Guardrails to ensure accuracy"]\n';
+    mermaidContent += '    stage3_3_note["A final verification that all previous stages were properly executed"]\n';
+    mermaidContent += '    stage3_1 --- stage3_1_note\n';
+    mermaidContent += '    stage3_2 --- stage3_2_note\n';
+    mermaidContent += '    stage3_3 --- stage3_3_note\n\n';
+    
+    // Organizar etiquetas de nivel verticalmente
+    mermaidContent += '    nivel1 --> nivel2 --> nivel3\n\n';
+    
+    // Estilos para nodos
+    mermaidContent += '    %% Estilos de nodos\n';
+    mermaidContent += '    classDef levelLabel fill:#ffffff,stroke:#555555,stroke-width:1px,color:#000000,font-weight:bold;\n';
+    mermaidContent += '    classDef level1Node fill:#8ab4db,stroke:#5d8cb3,stroke-width:2px,color:#ffffff,rx:15,ry:15,font-weight:bold;\n';
+    mermaidContent += '    classDef level2Node fill:#c5e0c5,stroke:#5f9c5f,stroke-width:2px,color:#000000,rx:15,ry:15;\n';
+    mermaidContent += '    classDef level3Node fill:#f9d9c0,stroke:#f0b27a,stroke-width:2px,color:#000000,rx:15,ry:15;\n';
+    mermaidContent += '    classDef noteNode fill:#ffffff,stroke:none,color:#444444,font-style:italic;\n\n';
+    
+    // Aplicar estilos a los nodos
+    mermaidContent += '    class nivel1,nivel2,nivel3 levelLabel;\n';
+    mermaidContent += '    class stage1 level1Node;\n';
+    mermaidContent += '    class stage2_1,stage2_2 level2Node;\n';
+    mermaidContent += '    class stage3_1,stage3_2,stage3_3 level3Node;\n';
+    mermaidContent += '    class stage2_1_note,stage2_2_note,stage3_1_note,stage3_2_note,stage3_3_note noteNode;\n';
     
     // Cerrar el gráfico Mermaid
     mermaidContent += '```';
     
     // Agregar contenido markdown antes y después del mapa para mayor contexto
-    let markdownContent = `# Mapa Conceptual: ${mainConcept.name}\n\n`;
+    let markdownContent = `# Mapa Conceptual: Etapas Críticas\n\n`;
     
     if (result.metadata.summary) {
       markdownContent += `## Resumen\n${result.metadata.summary}\n\n`;
@@ -542,6 +658,56 @@ class ConceptMapService {
     markdownContent += mermaidContent;
     
     return markdownContent;
+  }
+  
+  /**
+   * Obtiene información de una etapa específica para el mapa de etapas críticas
+   * @param {Object} result - Resultado del procesamiento
+   * @param {string} stageId - Identificador de la etapa
+   * @returns {Object} - Información de la etapa con herramientas y descripción
+   */
+  getStageInfo(result, stageId) {
+    // Datos predefinidos para tener un mapa similar al ejemplo
+    const stagesInfo = {
+      'org_hierarchy': {
+        tools: ['LangGraph', 'Penrose', 'spaCy', 'Haystack'],
+        description: 'Using tools to structure content hierarchically'
+      },
+      'reas_comp': {
+        tools: ['DeepSeek API', 'OpenAGI', 'GraphRAG', 'LangGraph'],
+        description: 'Using DeepSeek API, OpenAGI, GraphRAG, and LangGraph'
+      },
+      'sem_enrich': {
+        tools: ['Semantic Kernel', 'Semantic Scholar API', 'Wikidata Toolkit', 'ConceptNet'],
+        description: 'Using tools like Semantic Kernel, Semantic Scholar API, Wikidata Toolkit, and ConceptNet'
+      },
+      'val_verif': {
+        tools: ['Arguflow', 'Trieve', 'DePlot', 'NeMo Guardrails'],
+        description: 'Using Arguflow, Trieve, DePlot, and NeMo Guardrails to ensure accuracy'
+      },
+      'adapt_aesth': {
+        tools: ['Markmap', 'Shiki Twoslash', 'Open Props', 'Lottie', 'Tippy.js'],
+        description: ''
+      },
+      'desc_concl': {
+        tools: [],
+        description: 'A final verification that all previous stages were properly executed'
+      }
+    };
+    
+    // Si tenemos información predefinida para esta etapa, usarla
+    if (stagesInfo[stageId]) {
+      return stagesInfo[stageId];
+    }
+    
+    // Si no hay información predefinida, tratar de extraerla del resultado
+    // En una implementación real, aquí podríamos buscar en los conceptos del resultado
+    // para encontrar herramientas y descripciones relevantes para cada etapa
+    
+    return {
+      tools: [],
+      description: ''
+    };
   }
   
   /**

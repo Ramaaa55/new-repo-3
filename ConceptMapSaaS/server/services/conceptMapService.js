@@ -926,6 +926,134 @@ class ConceptMapService {
     
     // 1. Obtener configuración visual según estilo
     const visualSettings = this.getEducationalVisualSettings(config.style);
+  }
+  
+  /**
+   * Obtiene configuración visual para mapas conceptuales educativos
+   * @param {string} style - Estilo visual a usar (modern, classic, colorful, minimal)
+   * @returns {Object} - Configuración visual para el mapa conceptual
+   */
+  getEducationalVisualSettings(style = 'modern') {
+    // Estilos predefinidos para mapas conceptuales
+    const visualStyles = {
+      // Estilo moderno con bordes redondeados y colores suaves
+      modern: {
+        nodeColors: {
+          0: '#6a0dad', // Color principal para conceptos de nivel 0 (púrpura)
+          1: '#4169e1', // Azul para conceptos de nivel 1
+          2: '#3cb371', // Verde para conceptos de nivel 2
+          3: '#ff8c00', // Naranja para conceptos de nivel 3
+          default: '#6495ed' // Azul claro para otros niveles
+        },
+        fontSizes: {
+          0: 18,
+          1: 16,
+          2: 14,
+          default: 12
+        },
+        lineStyles: {
+          causal: 'thick',
+          hierarchical: 'normal',
+          descriptive: 'dashed',
+          default: 'normal'
+        },
+        borderRadius: '8px',
+        shadowEffect: true,
+        animation: true
+      },
+      
+      // Estilo clásico con formas tradicionales
+      classic: {
+        nodeColors: {
+          0: '#000080', // Azul marino para conceptos principales
+          1: '#006400', // Verde oscuro para nivel 1
+          2: '#8b0000', // Rojo oscuro para nivel 2
+          3: '#4b0082', // Índigo para nivel 3
+          default: '#2f4f4f' // Gris oscuro para otros
+        },
+        fontSizes: {
+          0: 16,
+          1: 14,
+          2: 12,
+          default: 10
+        },
+        lineStyles: {
+          causal: 'solid',
+          hierarchical: 'solid',
+          descriptive: 'dotted',
+          default: 'solid'
+        },
+        borderRadius: '0px',
+        shadowEffect: false,
+        animation: false
+      },
+      
+      // Estilo colorido para mayor impacto visual
+      colorful: {
+        nodeColors: {
+          0: '#ff1493', // Rosa intenso para nivel 0
+          1: '#00bfff', // Azul cielo para nivel 1
+          2: '#32cd32', // Verde lima para nivel 2
+          3: '#ffd700', // Amarillo dorado para nivel 3
+          default: '#ff7f50' // Coral para otros niveles
+        },
+        fontSizes: {
+          0: 20,
+          1: 18,
+          2: 16,
+          default: 14
+        },
+        lineStyles: {
+          causal: 'bold',
+          hierarchical: 'bold',
+          descriptive: 'dashed',
+          default: 'normal'
+        },
+        borderRadius: '12px',
+        shadowEffect: true,
+        animation: true
+      },
+      
+      // Estilo minimalista para mayor claridad
+      minimal: {
+        nodeColors: {
+          0: '#333333', // Gris oscuro para nivel 0
+          1: '#666666', // Gris medio para nivel 1
+          2: '#888888', // Gris claro para nivel 2
+          3: '#aaaaaa', // Gris muy claro para nivel 3
+          default: '#666666' // Gris medio para otros niveles
+        },
+        fontSizes: {
+          0: 16,
+          1: 14,
+          2: 12,
+          default: 10
+        },
+        lineStyles: {
+          causal: 'normal',
+          hierarchical: 'normal',
+          descriptive: 'dotted',
+          default: 'normal'
+        },
+        borderRadius: '4px',
+        shadowEffect: false,
+        animation: false
+      }
+    };
+    
+    // Devolver el estilo solicitado o el estilo moderno por defecto
+    return visualStyles[style] || visualStyles.modern;
+  }
+  
+  /**
+   * Paso 5: Optimizar Presentación Visual
+   * Mejora la claridad y comprensión visual del mapa conceptual
+   */
+  async step5_OptimizeVisualPresentation(result, config) {
+    console.log('Optimizando presentación visual');
+    
+    // 1. Obtener configuración visual según estilo
+    const visualSettings = this.getEducationalVisualSettings(config.style);
     
     // 2. Asignar colores y formas a conceptos según nivel y categoría
     result.concepts.forEach(concept => {
