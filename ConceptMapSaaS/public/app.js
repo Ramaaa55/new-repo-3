@@ -59,8 +59,13 @@ document.addEventListener('DOMContentLoaded', function() {
                 complexity: document.getElementById('complexity').value
             };
             
+            console.log('Opciones de configuración:', options);
+            console.log('Texto a procesar (primeros 50 caracteres):', text.substring(0, 50));
+            
             // Simular procesamiento por etapas (en una implementación real, esto sería una llamada a la API)
             await simulateProcessing(options);
+            
+            console.log('Iniciando llamada a la API...');
             
             // Llamada a la API para generar el mapa conceptual
             const response = await fetch('/api/generate-map', {
@@ -71,15 +76,21 @@ document.addEventListener('DOMContentLoaded', function() {
                 body: JSON.stringify({ text, options })
             });
             
+            console.log('Respuesta API status:', response.status);
+            
             if (!response.ok) {
-                throw new Error('Error al generar el mapa conceptual');
+                const errorText = await response.text();
+                console.error('Error en la respuesta:', errorText);
+                throw new Error(`Error al generar el mapa conceptual: ${response.status} ${errorText}`);
             }
             
             const data = await response.json();
+            console.log('Datos recibidos:', data);
             
             if (data.success) {
                 // Guardar los datos del mapa - accediendo a la estructura correcta
                 currentMapData = data.result.content;
+                console.log('Contenido del mapa (primeros 100 caracteres):', data.result.content.substring(0, 100));
                 
                 // Renderizar el mapa conceptual
                 renderMarkmap(data.result.content);
@@ -89,6 +100,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 
                 showNotification('Mapa conceptual generado exitosamente', 'success');
             } else {
+                console.error('Error en datos recibidos:', data.error || 'Error desconocido');
                 throw new Error(data.error || 'Error desconocido');
             }
         } catch (error) {
@@ -163,7 +175,8 @@ document.addEventListener('DOMContentLoaded', function() {
             let mermaidCode = '';
             const mermaidDivs = div.querySelectorAll('code');
             mermaidDivs.forEach((mermaidDiv) => {
-                if (mermaidDiv.parentElement.tagName === 'PRE' && mermaidDiv.textContent.includes('graph TD')) {
+                if (mermaidDiv.parentElement.tagName === 'PRE' && 
+                   (mermaidDiv.textContent.includes('graph TD') || mermaidDiv.textContent.includes('flowchart TD'))) {
                     mermaidCode = mermaidDiv.textContent.trim();
                     // Eliminar el bloque de código original
                     mermaidDiv.parentElement.remove();
@@ -186,18 +199,48 @@ document.addEventListener('DOMContentLoaded', function() {
                     fontFamily: 'var(--font-sans)',
                     flowchart: {
                         htmlLabels: true,
-                        curve: 'linear',
+                        curve: 'basis',
                         useMaxWidth: true,
-                        rankSpacing: 150,
-                        nodeSpacing: 100,
+                        rankSpacing: 80,
+                        nodeSpacing: 50,
                         padding: 15
                     }
                 });
+                
+                // Aplicar estilos personalizados al SVG una vez renderizado
+                const customStyleFunction = (svgElement) => {
+                    // Añadir estilos a los nodos rectangulares
+                    const rectNodes = svgElement.querySelectorAll('.node rect');
+                    rectNodes.forEach(node => {
+                        node.setAttribute('rx', '10');
+                        node.setAttribute('ry', '10');
+                        node.setAttribute('stroke-width', '2');
+                    });
+                    
+                    // Mejorar los estilos de las flechas
+                    const arrows = svgElement.querySelectorAll('.flowchart-link, .messageText');
+                    arrows.forEach(arrow => {
+                        arrow.setAttribute('stroke-width', '2');
+                    });
+                    
+                    // Ajustar el tamaño del SVG
+                    svgElement.setAttribute('width', '100%');
+                    svgElement.setAttribute('height', 'auto');
+                    
+                    // Añadir clases para los estilos en CSS
+                    svgElement.classList.add('concept-map-svg');
+                };
                 
                 // Renderizar el diagrama Mermaid
                 mermaid.render('concept-map-svg', mermaidCode)
                     .then(result => {
                         mermaidContainer.innerHTML = result.svg;
+                        
+                        // Aplicar estilos personalizados al SVG
+                        const svgElement = mermaidContainer.querySelector('svg');
+                        if (svgElement) {
+                            customStyleFunction(svgElement);
+                        }
                     })
                     .catch(err => {
                         console.error('Error al renderizar Mermaid:', err);

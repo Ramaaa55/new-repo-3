@@ -72,7 +72,7 @@ class ConceptMapService {
       // Etapa 3: Enriquecimiento Semántico
       if (config.stages.enrichment) {
         console.log('Ejecutando Etapa 3: Enriquecimiento Semántico');
-        await this.step3_EnrichSemantically(text, result);
+        await this.step3_EnrichSemantically(text, result, config);
         result.metadata.stageResults.enrichment = {
           completedAt: new Date().toISOString(),
           definitionsAdded: result.concepts.filter(c => c.definition).length,
@@ -170,248 +170,142 @@ class ConceptMapService {
     
     return result;
   }
-
-  /**
-   * Paso 2: Analizar Relaciones
-   * Aplica razonamiento para determinar conexiones significativas entre conceptos
-   */
-  async step2_AnalyzeRelationships(text, result) {
-    // Identificar relaciones entre conceptos
-    const relationships = this.identifyConceptRelationships(text, result.concepts);
-    
-    // Clasificar tipos de relaciones (causa-efecto, pertenencia, etc.)
-    const typedRelationships = this.classifyRelationshipTypes(relationships);
-    
-    // Establecer fuerza de relaciones
-    const weightedRelationships = this.assignRelationshipStrength(typedRelationships);
-    
-    // Guardar resultados
-    result.relationships = weightedRelationships;
-    result.knowledgeGraph = this.createKnowledgeGraph(result.concepts, weightedRelationships);
-    
-    return result;
-  }
-
-  /**
-   * Paso 3: Enriquecer Semánticamente
-   * Expande cada concepto con definiciones breves, ejemplos, sinónimos o clasificaciones
-   */
-  async step3_EnrichSemantically(text, result) {
-    console.log(`Enriqueciendo semánticamente ${result.concepts.length} conceptos...`);
-    
-    // Enriquecer cada concepto con definiciones, ejemplos y términos relacionados
-    result.concepts = result.concepts.map(concept => {
-      // 1. Generar definición concisa para el concepto
-      if (!concept.definition) {
-        concept.definition = this.generateConciseDefinition(concept);
-      }
-      
-      // 2. Encontrar ejemplos relevantes para conceptos importantes
-      if (!concept.examples) {
-        concept.examples = this.findRelevantExamples(concept);
-      }
-      
-      // 3. Identificar términos relacionados o sinónimos
-      if (!concept.relatedTerms) {
-        concept.relatedTerms = this.identifyRelatedTerms(concept);
-      }
-      
-      // 4. Clasificar el concepto en categorías
-      if (!concept.classification) {
-        concept.classification = this.classifyConcept(concept);
-      }
-      
-      return concept;
-    });
-    
-    // Calcular profundidad semántica del mapa conceptual
-    const semanticDepth = result.concepts.reduce((total, concept) => {
-      let depth = 0;
-      if (concept.definition) depth += 1;
-      if (concept.examples?.length) depth += concept.examples.length * 0.5;
-      if (concept.relatedTerms?.length) depth += concept.relatedTerms.length * 0.3;
-      return total + depth;
-    }, 0) / Math.max(1, result.concepts.length);
-    
-    // Guardar metadatos del enriquecimiento semántico
-    result.metadata.semanticDepth = parseFloat(semanticDepth.toFixed(2));
-    result.metadata.enrichmentStats = {
-      definitionsCount: result.concepts.filter(c => c.definition).length,
-      examplesCount: result.concepts.reduce((total, c) => total + (c.examples?.length || 0), 0),
-      relatedTermsCount: result.concepts.reduce((total, c) => total + (c.relatedTerms?.length || 0), 0)
-    };
-    
-    console.log(`Enriquecimiento semántico completado. Profundidad semántica: ${result.metadata.semanticDepth}`);
-  }
-
-  /**
-   * Paso 4: Verificar y Validar
-   * Asegura coherencia y relevancia del mapa conceptual
-   */
-  async step4_VerifyAndValidate(result) {
-    console.log(`Validando ${result.concepts.length} conceptos y ${result.relationships.length} relaciones...`);
-    
-    // Guardar conteos originales para los metadatos
-    const originalConceptCount = result.concepts.length;
-    const originalRelationshipCount = result.relationships.length;
-    
-    // 1. Filtrar conceptos irrelevantes según criterios de pertinencia
-    const relevantConcepts = this.filterIrrelevantConcepts(result.concepts);
-    
-    // 2. Eliminar conceptos redundantes o similares
-    const uniqueConcepts = this.removeRedundantConcepts(relevantConcepts);
-    
-    // Actualizar conceptos en el resultado
-    result.concepts = uniqueConcepts;
-    
-    // 3. Validar la coherencia de relaciones entre conceptos
-    result.relationships = this.validateRelationshipCoherence(result.relationships, result.concepts);
-    
-    // 4. Calcular puntuación de coherencia global del mapa
-    const coherenceScore = this.calculateCoherenceScore(result.concepts, result.relationships);
-    
-    // Guardar metadatos de validación
-    result.metadata.coherenceScore = parseFloat(coherenceScore.toFixed(2));
-    result.metadata.conceptsRemoved = originalConceptCount - result.concepts.length;
-    result.metadata.relationshipsRemoved = originalRelationshipCount - result.relationships.length;
-    
-    // Si la coherencia es muy baja, agregar advertencia
-    if (coherenceScore < 0.5) {
-      result.metadata.warnings = result.metadata.warnings || [];
-      result.metadata.warnings.push({
-        type: 'low_coherence',
-        message: 'El mapa conceptual tiene baja coherencia. Considere refinar el texto de entrada.'
-      });
-    }
-    
-    console.log(`Validación completada. Coherencia: ${result.metadata.coherenceScore}. ` +
-      `Se eliminaron ${result.metadata.conceptsRemoved} conceptos y ${result.metadata.relationshipsRemoved} relaciones.`);
-  }
-
-  /**
-   * Paso 5: Optimizar Presentación Visual
-   * Mejora la claridad y comprensión visual del mapa conceptual
-   */
-  async step5_OptimizeVisualPresentation(result, config) {
-    console.log(`Optimizando presentación visual usando estilo '${config.style}'...`);
-    
-    // 1. Obtener la configuración visual educativa según el estilo
-    const visualSettings = this.getEducationalVisualSettings(config.style);
-    
-    // 2. Asignar emojis relevantes a categorías de conceptos para mejorar reconocimiento visual
-    result.conceptEmojis = this.assignRelevantEmojis(result.concepts);
-    
-    // 3. Aplicar formato a conceptos según su nivel e importancia
-    result.concepts.forEach(concept => {
-      // Inicializar objeto de formato si no existe
-      concept.formatting = concept.formatting || {};
-      
-      // Conceptos principales o importantes en negrita
-      if (concept.level === 0 || concept.importance > 4 || concept.isCritical) {
-        concept.formatting.bold = true;
-      }
-      
-      // Conceptos secundarios importantes subrayados
-      if (concept.level === 1 && concept.importance > 3) {
-        concept.formatting.underline = true;
-      }
-      
-      // Asignar colores según nivel jerárquico
-      const colorIndex = concept.level % visualSettings.colorPalette.length;
-      concept.formatting.color = visualSettings.colorPalette[colorIndex];
-      
-      // Asignar tamaño de fuente según nivel jerárquico e importancia
-      const fontKey = concept.level === 0 ? 'title' :
-                     concept.level === 1 ? 'concept' :
-                     concept.level === 2 ? 'subconcept' : 'detail';
-      concept.formatting.font = visualSettings.fontOptions[fontKey];
-      
-      // Asignar padding según configuración
-      concept.formatting.padding = visualSettings.spacing.nodePadding;
-    });
-    
-    // 4. Aplicar estilo visual a relaciones según importancia
-    result.relationships.forEach(relationship => {
-      // Inicializar propiedades visuales
-      relationship.visualWeight = relationship.visualWeight || 1;
-      
-      // Encontrar importancia de conceptos conectados
-      const sourceImportance = result.concepts.find(c => c.id === relationship.source)?.importance || 1;
-      const targetImportance = result.concepts.find(c => c.id === relationship.target)?.importance || 1;
-      
-      // Determinar peso visual de la relación basado en importancia
-      const relationStrength = relationship.strength || 1;
-      const avgImportance = (sourceImportance + targetImportance) / 2;
-      relationship.visualWeight = Math.max(1, Math.min(3, Math.round((avgImportance + relationStrength) / 2)));
-      
-      // Determinar estilo de línea según peso visual
-      relationship.lineStyle = relationship.visualWeight === 3 ? visualSettings.lineStyles.strong :
-                              relationship.visualWeight === 2 ? visualSettings.lineStyles.medium :
-                              visualSettings.lineStyles.light;
-    });
-    
-    // 5. Crear un grafo de conocimiento optimizado para visualización
-    result.knowledgeGraph = this.createKnowledgeGraph(result.concepts, result.relationships);
-    
-    console.log(`Optimización visual completada con estilo '${config.style}'`);
-  }
-
-  // Métodos auxiliares para Paso 1: Organizar y Jerarquizar
-
+  
   /**
    * Extrae conceptos principales del texto
    * @param {string} text - Texto a analizar
    * @returns {Array} - Lista de conceptos
    */
   extractMainConcepts(text) {
-    // Dividir el texto en oraciones y párrafos para un análisis estructurado
+    console.log('Extracting main concepts from text...');
+    
+    // En una implementación completa, aquí se utilizarían herramientas como spaCy y LangGraph
+    // Para esta versión, utilizamos una implementación simplificada
+    
+    // Simular procesamiento de texto para extracción de conceptos
+    const concepts = [];
+    
+    // Dividir el texto en párrafos
     const paragraphs = text.split(/\n+/);
-    const sentences = text.split(/[.!?]+/).filter(s => s.trim().length > 0);
     
-    // Identificar palabras clave (en una implementación real esto usaría NLP)
-    const words = text.split(/\s+/);
-    const wordFrequency = {};
+    // Contador para IDs únicos
+    let idCounter = 1;
     
-    // Calcular frecuencia de palabras
-    words.forEach(word => {
-      const cleanWord = word.toLowerCase().replace(/[^a-záéíóúüñ\w]/g, '');
-      if (cleanWord.length > 3) { // Ignorar palabras muy cortas
-        wordFrequency[cleanWord] = (wordFrequency[cleanWord] || 0) + 1;
+    // Extraer títulos y subtitulos como conceptos principales
+    const titlePattern = /^#+\s+(.+)$|^([^\n]+)\n[=\-]{2,}$/gm;
+    let match;
+    const titleMatches = [...text.matchAll(titlePattern)];
+    
+    if (titleMatches.length > 0) {
+      // Si hay títulos, usarlos como conceptos de nivel superior
+      titleMatches.forEach((match, index) => {
+        const title = (match[1] || match[2]).trim();
+        concepts.push({
+          id: `concept_${idCounter++}`,
+          name: title,
+          level: index === 0 ? 0 : 1, // El primer título es nivel 0, el resto nivel 1
+          importance: 1.0 - (index * 0.1),
+          originalForm: title,
+          isMainConcept: index === 0
+        });
+      });
+    } else {
+      // Si no hay títulos, extraer frases clave del primer párrafo como concepto principal
+      if (paragraphs.length > 0) {
+        const firstParagraph = paragraphs[0].trim();
+        if (firstParagraph.length > 0) {
+          // Usar la primera oración como concepto principal
+          const firstSentence = firstParagraph.split(/[.!?]\s+/)[0];
+          
+          // Extraer posible concepto principal (sustantivo principal)
+          const mainNoun = firstSentence.split(/\s+/)
+            .filter(word => word.length > 3)
+            .find(word => /^[A-ZÁÉÍÓÚ][a-záéíóú]+/.test(word)) || firstSentence.split(/\s+/)[0];
+          
+          concepts.push({
+            id: `concept_${idCounter++}`,
+            name: mainNoun,
+            level: 0,
+            importance: 1.0,
+            originalForm: mainNoun,
+            isMainConcept: true
+          });
+        }
+      }
+    }
+    
+    // Extraer conceptos secundarios de cada párrafo
+    paragraphs.forEach(paragraph => {
+      // Ignorar párrafos muy cortos o vacíos
+      if (paragraph.trim().length < 10) return;
+      
+      // Dividir en oraciones
+      const sentences = paragraph.split(/[.!?]\s+/);
+      
+      sentences.forEach(sentence => {
+        // Extraer sustantivos como posibles conceptos
+        const words = sentence.split(/\s+/)
+          .map(word => word.replace(/[.,;:!?()\[\]{}'"‘’“”]/g, '').trim())
+          .filter(word => word.length > 3);
+        
+        // Seleccionar palabras que podrían ser conceptos (simplificado)
+        const potentialConcepts = words.filter(word => 
+          // Excluir palabras comunes y verbos frecuentes (simplificado)
+          !['para', 'como', 'este', 'esta', 'esto', 'estos', 'estas', 'porque', 'aunque', 'cuando', 'donde'].includes(word.toLowerCase())
+        );
+        
+        // Añadir conceptos potenciales
+        potentialConcepts.forEach(word => {
+          // Evitar duplicados (comparando formas normalizadas)
+          const normalizedWord = word.toLowerCase();
+          const existing = concepts.find(c => c.name.toLowerCase() === normalizedWord);
+          
+          if (!existing) {
+            concepts.push({
+              id: `concept_${idCounter++}`,
+              name: word,
+              level: concepts.some(c => c.isMainConcept) ? 2 : 1, // Nivel 2 si ya hay concepto principal, sino nivel 1
+              importance: 0.5,
+              originalForm: this.findOriginalForm(word, text) || word
+            });
+          }
+        });
+      });
+    });
+    
+    // Palabras clave especiales (listas, definiciones, términos destacados)
+    const listItems = text.match(/^\s*[\*\-\+\d]\s+(.+)$/gm) || [];
+    listItems.forEach(item => {
+      const content = item.replace(/^\s*[\*\-\+\d]\s+/, '').trim();
+      if (content.length > 3) {
+        const firstWord = content.split(/\s+/)[0].replace(/[.,;:!?()\[\]{}'"‘’“”]/g, '');
+        if (firstWord.length > 3) {
+          const normalizedWord = firstWord.toLowerCase();
+          const existing = concepts.find(c => c.name.toLowerCase() === normalizedWord);
+          
+          if (!existing) {
+            concepts.push({
+              id: `concept_${idCounter++}`,
+              name: firstWord,
+              level: 2,
+              importance: 0.4,
+              originalForm: this.findOriginalForm(firstWord, text) || firstWord,
+              examples: [content] // La línea completa como ejemplo
+            });
+          }
+        }
       }
     });
     
-    // Filtrar palabras comunes y ordenar por frecuencia
-    const commonWords = ['para', 'como', 'esto', 'este', 'esta', 'estos', 'estas', 'pero', 'porque'];
-    const sortedWords = Object.keys(wordFrequency)
-      .filter(word => !commonWords.includes(word))
-      .sort((a, b) => wordFrequency[b] - wordFrequency[a]);
+    // Eliminar conceptos demasiado genéricos o irrelevantes
+    const filteredConcepts = concepts.filter(concept => 
+      !['es', 'son', 'estar', 'estará', 'estaba', 'ser', 'hay', 'tiene', 'tienen'].includes(concept.name.toLowerCase())
+    );
     
-    // Crear conceptos a partir de palabras clave
-    const concepts = sortedWords.slice(0, 15).map((word, index) => {
-      // Determinar importancia basada en frecuencia y posición
-      const importance = (wordFrequency[word] / words.length * 100) + (15 - index) / 3;
-      
-      // Determinar nivel jerárquico inicial
-      // Conceptos muy importantes (top 3) van al nivel 0
-      // Los siguientes 5 al nivel 1, y el resto al nivel 2
-      const level = index < 3 ? 0 : (index < 8 ? 1 : 2);
-      
-      // Crear objeto concepto con metadatos
-      return {
-        id: `concept-${index}`,
-        name: word,
-        originalForm: this.findOriginalForm(word, text), // Preserva mayúsculas/minúsculas originales
-        importance: Math.min(importance, 6), // Escala de 1-6
-        frequency: wordFrequency[word],
-        level,
-        firstOccurrence: text.toLowerCase().indexOf(word.toLowerCase()),
-        isCritical: index < 5 // Los 5 conceptos más importantes son críticos
-      };
-    });
-    
-    return concepts;
+    console.log(`Extracted ${filteredConcepts.length} concepts from text`);
+    return filteredConcepts;
   }
-
+  
   /**
    * Encuentra la forma original de una palabra en el texto (respetando mayúsculas/minúsculas)
    * @param {string} word - Palabra normalizada
@@ -419,422 +313,727 @@ class ConceptMapService {
    * @returns {string} - Forma original de la palabra
    */
   findOriginalForm(word, text) {
-    const regex = new RegExp(`\\b${word}\\w*\\b`, 'i');
-    const match = text.match(regex);
+    // Crear un patrón de búsqueda insensible a mayúsculas/minúsculas
+    // y que busque la palabra como entidad completa (con límites de palabra)
+    const pattern = new RegExp(`\\b${word.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}\\b`, 'i');
+    
+    // Buscar en el texto original
+    const match = text.match(pattern);
+    
+    // Devolver la forma original si se encuentra, o la palabra original si no
     return match ? match[0] : word;
   }
-
+  
   /**
    * Ordena conceptos por relevancia e importancia
    * @param {Array} concepts - Lista de conceptos sin ordenar
    * @returns {Array} - Conceptos ordenados
    */
   sortConceptsByRelevance(concepts) {
-    // Primero ordenamos por nivel (los más generales primero)
-    const sortedByLevel = [...concepts].sort((a, b) => a.level - b.level);
-    
-    // Luego, dentro de cada nivel, ordenamos por importancia
-    const levels = {};
-    sortedByLevel.forEach(concept => {
-      if (!levels[concept.level]) levels[concept.level] = [];
-      levels[concept.level].push(concept);
+    // Primero asegurarse de que cada concepto tenga un nivel asignado
+    concepts.forEach(concept => {
+      // Asignar nivel por defecto si no lo tiene
+      if (concept.level === undefined) {
+        // Si es concepto principal, nivel 0
+        if (concept.isMainConcept) {
+          concept.level = 0;
+        } else {
+          // Para otros conceptos, nivel por defecto basado en importancia
+          concept.level = concept.importance > 0.7 ? 1 : 
+                         concept.importance > 0.4 ? 2 : 3;
+        }
+      }
+      
+      // Asegurar que la importancia esté definida
+      if (concept.importance === undefined) {
+        concept.importance = 1.0 - (concept.level * 0.25); // Mayor nivel, menor importancia
+      }
     });
     
-    // Ordenar cada nivel por importancia
-    Object.keys(levels).forEach(level => {
-      levels[level].sort((a, b) => b.importance - a.importance);
+    // Ordenar por nivel (ascendente) y dentro de cada nivel por importancia (descendente)
+    return [...concepts].sort((a, b) => {
+      // Primero por nivel
+      if (a.level !== b.level) {
+        return a.level - b.level;
+      }
+      // Dentro del mismo nivel, por importancia
+      return b.importance - a.importance;
     });
-    
-    // Aplanar de nuevo la estructura
-    return Object.keys(levels).sort().flatMap(level => levels[level]);
   }
-
+  
   /**
    * Crea una estructura jerárquica de árbol a partir de conceptos
    * @param {Array} concepts - Lista de conceptos ordenados
    * @returns {Object} - Estructura jerárquica de árbol
    */
   createHierarchicalStructure(concepts) {
-    // Agrupar conceptos por nivel
-    const levels = {};
-    concepts.forEach(concept => {
-      if (!levels[concept.level]) levels[concept.level] = [];
-      levels[concept.level].push(concept);
+    // Encontrar el concepto raíz (nivel 0 o concepto principal)
+    const rootConcepts = concepts.filter(c => c.level === 0 || c.isMainConcept);
+    
+    // Si no hay conceptos de nivel 0, usar el primero como raíz
+    if (rootConcepts.length === 0 && concepts.length > 0) {
+      rootConcepts.push({...concepts[0], level: 0, isMainConcept: true});
+    }
+    
+    // Crear árbol jerárquico
+    const tree = rootConcepts.map(root => {
+      return this.buildConceptChildren(root, concepts);
     });
     
-    // Obtener conceptos raíz (nivel 0)
-    const rootConcepts = levels[0] || [];
-    
-    // Crear estructura de árbol con relaciones padre-hijo explícitas
-    const hierarchyTree = {
-      nodes: concepts,
-      root: rootConcepts.map(root => ({
-        id: root.id,
-        name: root.originalForm || root.name,
-        importance: root.importance,
-        level: root.level,
-        children: this.buildConceptChildren(root, concepts)
-      }))
-    };
-    
-    return hierarchyTree;
+    return tree;
   }
-
+  
   /**
    * Construye la estructura jerárquica de hijos para un concepto
    * @param {Object} parent - Concepto padre
    * @param {Array} allConcepts - Todos los conceptos disponibles
-   * @returns {Array} - Árbol de hijos para este concepto
+   * @returns {Object} - Árbol de hijos para este concepto
    */
   buildConceptChildren(parent, allConcepts) {
-    // Encontrar conceptos que deberían ser hijos de este padre
-    const children = allConcepts.filter(concept => 
-      // Debe ser exactamente un nivel inferior al padre
-      concept.level === parent.level + 1 &&
-      // Y debemos tener algún criterio de relación semántica
-      // En una implementación real, esto se haría con NLP
-      // Para esta demo, usamos una heurística simplificada
-      concept.firstOccurrence > parent.firstOccurrence
-    );
-    
-    // Limitar el número de hijos directos (máximo 4 por nodo)
-    const limitedChildren = children.slice(0, 4);
-    
-    // Construir recursivamente el árbol
-    return limitedChildren.map(child => ({
-      id: child.id,
-      name: child.originalForm || child.name,
-      importance: child.importance,
-      level: child.level,
-      // Construir los hijos de este hijo si no está en el nivel más bajo
-      children: child.level < 2 ? this.buildConceptChildren(child, allConcepts) : []
-    }));
-  }
-
-  // Métodos auxiliares para Paso 2: Analizar Relaciones
-
-  /**
-   * Identifica relaciones entre conceptos basadas en el texto
-   * @param {string} text - Texto original
-   * @param {Array} concepts - Lista de conceptos
-   * @returns {Array} - Lista de relaciones
-   */
-  identifyConceptRelationships(text, concepts) {
-    const relationships = [];
-    
-    // Obtener oraciones para analizar relaciones
-    const sentences = text.split(/[.!?]+/).filter(s => s.trim().length > 0);
-    
-    // Para cada concepto, buscar otros conceptos que aparezcan en las mismas oraciones
-    concepts.forEach(source => {
-      // Encontrar oraciones que contienen este concepto
-      const relevantSentences = sentences.filter(sentence => 
-        sentence.toLowerCase().includes(source.name.toLowerCase())
-      );
-      
-      // Buscar otros conceptos en estas oraciones
-      concepts.forEach(target => {
-        // Evitar auto-relaciones
-        if (source.id === target.id) return;
-        
-        // Contar cuántas oraciones contienen ambos conceptos
-        const sharedSentences = relevantSentences.filter(sentence => 
-          sentence.toLowerCase().includes(target.name.toLowerCase())
-        ).length;
-        
-        // Si hay oraciones compartidas, crear una relación
-        if (sharedSentences > 0) {
-          relationships.push({
-            id: `rel-${source.id}-${target.id}`,
-            source: source.id,
-            target: target.id,
-            // Por ahora dejamos el tipo genérico, lo clasificaremos en el siguiente paso
-            type: 'relacionado con',
-            strength: Math.min(sharedSentences + 1, 5), // Escala de fuerza 1-5
-            sharedSentences
-          });
-        }
-      });
-    });
-    
-    return relationships;
-  }
-
-  /**
-   * Clasifica los tipos de relaciones entre conceptos
-   * @param {Array} relationships - Lista de relaciones
-   * @returns {Array} - Relaciones con tipos clasificados
-   */
-  classifyRelationshipTypes(relationships) {
-    // Tipos de relaciones comunes en mapas conceptuales
-    const relationTypes = [
-      { name: 'es parte de', indicator: 'pertenencia', weight: 3 },
-      { name: 'causa', indicator: 'causalidad', weight: 4 },
-      { name: 'es un tipo de', indicator: 'clasificación', weight: 3 },
-      { name: 'contiene', indicator: 'composición', weight: 3 },
-      { name: 'influye en', indicator: 'influencia', weight: 2 },
-      { name: 'se relaciona con', indicator: 'asociación', weight: 1 },
-      { name: 'precede a', indicator: 'secuencia', weight: 2 },
-      { name: 'requiere', indicator: 'dependencia', weight: 3 },
-      { name: 'se opone a', indicator: 'contraste', weight: 3 }
-    ];
-    
-    // Asignar tipos de relaciones basados en algún criterio
-    // En una implementación real, esto se haría con NLP
-    return relationships.map(rel => {
-      // Para demo, asignar tipos basados en la fuerza de la relación
-      // Las relaciones más fuertes tienden a ser de tipos más específicos
-      let typeIndex;
-      if (rel.strength >= 4) {
-        // Relaciones fuertes: causalidad, clasificación, o composición
-        typeIndex = Math.floor(Math.random() * 3);
-      } else if (rel.strength >= 2) {
-        // Relaciones medias: influencia, secuencia, o dependencia
-        typeIndex = 4 + Math.floor(Math.random() * 3);
-      } else {
-        // Relaciones débiles: asociación general
-        typeIndex = 5;
-      }
-      
-      return {
-        ...rel,
-        type: relationTypes[typeIndex].name,
-        semanticCategory: relationTypes[typeIndex].indicator
-      };
-    });
-  }
-
-  /**
-   * Asigna pesos/fuerza a las relaciones identificadas
-   * @param {Array} relationships - Lista de relaciones tipificadas
-   * @returns {Array} - Relaciones con fuerza asignada
-   */
-  assignRelationshipStrength(relationships) {
-    // Ya tenemos la fuerza inicial basada en co-ocurrencia en oraciones
-    // Ahora ajustamos basándonos en tipos semánticos
-    
-    const typeWeights = {
-      'causa': 1.5,
-      'es un tipo de': 1.3,
-      'es parte de': 1.3,
-      'contiene': 1.2,
-      'requiere': 1.2,
-      'precede a': 1.1,
-      'influye en': 1.0,
-      'se opone a': 1.0,
-      'se relaciona con': 0.8
+    // Crear nodo para este concepto
+    const node = {
+      ...parent,
+      children: []
     };
     
+    // Encontrar posibles hijos (conceptos de nivel inmediatamente inferior)
+    const childLevel = parent.level + 1;
+    const potentialChildren = allConcepts.filter(c => 
+      c.level === childLevel && c.id !== parent.id
+    );
+    
+    // Asignar hijos recursivamente
+    node.children = potentialChildren.map(child => 
+      this.buildConceptChildren(child, allConcepts.filter(c => c.id !== child.id))
+    );
+    
+    return node;
+  }
+
+  /**
+   * Paso 2: Analizar Relaciones
+   * Aplica razonamiento para determinar conexiones significativas entre conceptos
+   */
+  async step2_AnalyzeRelationships(text, result) {
+    console.log('Analizando relaciones entre conceptos...');
+    
+    // Detectar relaciones entre conceptos
+    const relationships = await this.detectConceptRelationships(result.concepts, text);
+    
+    // Clasificar tipos de relaciones
+    const classifiedRelationships = await this.classifyRelationshipTypes(relationships);
+    
+    // Guardar relaciones
+    result.relationships = classifiedRelationships;
+    
+    return result;
+  }
+  
+  /**
+   * Detecta relaciones entre conceptos basados en su proximidad en el texto
+   * y patrones lingüísticos
+   * @param {Array} concepts - Lista de conceptos
+   * @param {string} text - Texto original
+   * @returns {Array} - Lista de relaciones detectadas
+   */
+  async detectConceptRelationships(concepts, text) {
+    console.log(`Detectando relaciones entre ${concepts.length} conceptos...`);
+    
+    const relationships = [];
+    let relationCounter = 1;
+    
+    // Detectar relaciones basadas en jerarquía de niveles
+    for (let i = 0; i < concepts.length; i++) {
+      const concept1 = concepts[i];
+      
+      // Buscar conceptos de nivel inmediatamente inferior
+      for (let j = 0; j < concepts.length; j++) {
+        if (i === j) continue; // Ignorar comparación con uno mismo
+        
+        const concept2 = concepts[j];
+        
+        // Crear relaciones jerárquicas (basadas en nivel)
+        if (concept2.level === concept1.level + 1) {
+          // Crear relación jerárquica
+          relationships.push({
+            id: `relation_${relationCounter++}`,
+            source: concept1.id,
+            target: concept2.id,
+            type: 'hierarchical',
+            strength: 0.8,
+            label: 'incluye'
+          });
+        }
+      }
+    }
+    
+    // Para relaciones más sofisticadas, se utilizarían herramientas como LangGraph y GraphRAG
+    // Esta implementación es simplificada
+    
+    console.log(`Detectadas ${relationships.length} relaciones entre conceptos`);
+    return relationships;
+  }
+  
+  /**
+   * Clasifica tipos de relaciones entre conceptos
+   * @param {Array} relationships - Lista de relaciones
+   * @returns {Array} - Relaciones clasificadas
+   */
+  async classifyRelationshipTypes(relationships) {
+    // Tipos de relaciones semánticas entre conceptos
+    const relationTypes = [
+      { type: 'hierarchical', labels: ['contiene', 'incluye', 'abarca', 'comprende'] },
+      { type: 'causal', labels: ['causa', 'produce', 'genera', 'provoca'] },
+      { type: 'sequential', labels: ['precede a', 'sigue a', 'conduce a', 'deriva en'] },
+      { type: 'descriptive', labels: ['describe', 'caracteriza', 'define'] },
+      { type: 'example', labels: ['ejemplifica', 'ilustra', 'muestra'] },
+      { type: 'comparative', labels: ['similar a', 'diferente de', 'contrasta con'] }
+    ];
+    
+    // Asignar etiquetas más descriptivas
     return relationships.map(rel => {
-      // Ajustar fuerza basada en tipo semántico
-      const weight = typeWeights[rel.type] || 1.0;
-      const adjustedStrength = Math.min(Math.max(rel.strength * weight, 1), 5);
+      // Si ya tiene un tipo asignado
+      if (rel.type) {
+        // Seleccionar una etiqueta aleatoria para ese tipo si no la tiene ya
+        if (!rel.label) {
+          const matchingType = relationTypes.find(rt => rt.type === rel.type);
+          if (matchingType) {
+            const randomIndex = Math.floor(Math.random() * matchingType.labels.length);
+            rel.label = matchingType.labels[randomIndex];
+          }
+        }
+        return rel;
+      }
+      
+      // Asignar tipo aleatorio para esta implementación simplificada
+      const randomTypeIndex = Math.floor(Math.random() * relationTypes.length);
+      const selectedType = relationTypes[randomTypeIndex];
+      
+      // Seleccionar etiqueta aleatoria para el tipo
+      const randomLabelIndex = Math.floor(Math.random() * selectedType.labels.length);
       
       return {
         ...rel,
-        strength: adjustedStrength,
-        // Para visualización, asignar grosor de línea basado en fuerza
-        visualWeight: Math.ceil(adjustedStrength)
+        type: selectedType.type,
+        label: rel.label || selectedType.labels[randomLabelIndex]
       };
     });
   }
 
-  // Métodos auxiliares para Paso 3: Enriquecer Semánticamente
-
+  /**
+   * Paso 3: Enriquecer Semánticamente
+   * Expande cada concepto con definiciones breves, ejemplos, sinónimos o clasificaciones
+   */
+  async step3_EnrichSemantically(text, result, config = {}) {
+    console.log(`Enriqueciendo semánticamente ${result.concepts.length} conceptos...`);
+    
+    // Procesamiento por lotes para evitar sobrecargas
+    const batchSize = 5;
+    const batches = Math.ceil(result.concepts.length / batchSize);
+    
+    for (let i = 0; i < batches; i++) {
+      const start = i * batchSize;
+      const end = Math.min(start + batchSize, result.concepts.length);
+      const batch = result.concepts.slice(start, end);
+      
+      // Procesar cada concepto en el lote
+      await Promise.all(batch.map(async (concept) => {
+        // Generar definición concisa
+        if (config.includeDefinitions !== false) {
+          concept.definition = await this.generateConciseDefinition(concept);
+        }
+        
+        // Encontrar ejemplos relevantes
+        if (config.includeExamples !== false) {
+          concept.examples = await this.findRelevantExamples(concept);
+        }
+        
+        // Identificar términos relacionados o sinónimos
+        concept.relatedTerms = await this.identifyRelatedTerms(concept);
+        
+        // Clasificar el concepto
+        const classification = await this.classifyConcept(concept);
+        concept.category = classification.category;
+        concept.subcategory = classification.subcategory;
+        
+        // Determinar importancia
+        concept.importance = concept.importance || 
+                             (1 / (concept.level + 1)) * (concept.relatedTerms.length + 1);
+                             
+        // Atributos para el concepto
+        concept.attributes = this.extractConceptAttributes(concept, text);
+      }));
+      
+      console.log(`Procesado lote ${i+1}/${batches} de conceptos`);
+    }
+    
+    return result;
+  }
+  
   /**
    * Genera una definición concisa para un concepto
    * @param {Object} concept - Concepto a definir
    * @returns {string} - Definición concisa
    */
-  generateConciseDefinition(concept) {
-    // En una implementación real, esto usaría APIs de diccionarios o modelos de lenguaje
-    // Para esta demo, generamos definiciones simuladas basándonos en el concepto
+  async generateConciseDefinition(concept) {
+    // En una implementación completa, aquí se utilizaría Semantic Scholar y/o Wikidata
+    // Para esta versión, generamos definiciones simples basadas en el nombre del concepto
     
-    const definitions = [
-      `Término que hace referencia a ${concept.name} en el contexto del documento`,
-      `Concepto clave relacionado con la temática principal`,
-      `Elemento fundamental que representa ${concept.originalForm || concept.name}`,
-      `Componente que define aspectos esenciales del tema tratado`
-    ];
-    
-    // Seleccionar definición basada en nivel e importancia
-    const index = (concept.level + Math.floor(concept.importance)) % definitions.length;
-    return definitions[index];
-  }
-
-  /**
-   * Encuentra ejemplos relevantes para un concepto
-   * @param {Object} concept - Concepto para el que buscar ejemplos
-   * @returns {Array<string>} - Lista de ejemplos
-   */
-  findRelevantExamples(concept) {
-    // En una implementación real, esto extraería ejemplos del texto original
-    // o usaría bases de conocimiento externas
-    
-    // Para esta demo, generamos ejemplos simulados
-    const examples = [
-      `Ejemplo aplicado de ${concept.originalForm || concept.name}`,
-      `Caso práctico que ilustra este concepto`,
-      `Instancia específica que demuestra su aplicación`
-    ];
-    
-    // Conceptos más importantes o de nivel superior tienen más ejemplos
-    const numExamples = Math.min(3, Math.max(1, 3 - concept.level));
-    return examples.slice(0, numExamples);
-  }
-
-  /**
-   * Identifica términos relacionados o sinónimos
-   * @param {Object} concept - Concepto para el que buscar términos relacionados
-   * @returns {Array<string>} - Lista de términos relacionados
-   */
-  identifyRelatedTerms(concept) {
-    // En una implementación real, esto usaría APIs como WordNet o tesauros
-    // Para esta demo, generamos términos relacionados simulados
-    
-    return [
-      `Término relacionado con ${concept.name}`,
-      `Sinónimo contextual`
-    ];
-  }
-
-  /**
-   * Clasifica el concepto en categorías aplicables
-   * @param {Object} concept - Concepto para clasificar
-   * @returns {Object} - Información de clasificación
-   */
-  classifyConcept(concept) {
-    // En una implementación real, esto usaría taxonomías o categorización NLP
-    // Para esta demo, asignamos categorías simples basadas en nivel
-    
-    const categories = [
-      'Concepto principal',
-      'Concepto secundario',
-      'Concepto terciario',
-      'Detalle',
-      'Ejemplo'  
-    ];
-    
-    return {
-      category: categories[concept.level] || categories[0],
-      domain: 'General'
+    const commonDefinitions = {
+      tecnología: "Conjunto de conocimientos, instrumentos y técnicas que permiten el aprovechamiento práctico del conocimiento científico.",
+      inteligencia: "Capacidad de entender, comprender y resolver problemas.",
+      artificial: "Hecho por el ser humano; no natural.",
+      educación: "Proceso de facilitar el aprendizaje o la adquisición de conocimientos, habilidades, valores y creencias.",
+      aprendizaje: "Proceso de adquirir conocimientos, habilidades o aptitudes por medio del estudio o la experiencia.",
+      conceptual: "Relativo a los conceptos o a la formación de conceptos.",
+      mapa: "Representación gráfica y métrica de elementos existentes o abstractos."
     };
-  }
-
-  // Métodos auxiliares para Paso 4: Verificar y Validar
-  
-  /**
-   * Filtra conceptos irrelevantes basado en criterios de pertinencia
-   * @param {Array} concepts - Lista de conceptos
-   * @returns {Array} - Lista filtrada de conceptos relevantes
-   */
-  filterIrrelevantConcepts(concepts) {
-    // Criterios de relevancia: frecuencia, importancia, conexiones
-    return concepts.filter(concept => 
-      // Los conceptos deben tener cierta importancia mínima o alta frecuencia
-      concept.importance > 1.5 || 
-      concept.frequency > 1 ||
-      // O los conceptos deben ser críticos para la comprensión
-      concept.isCritical
-    );
-  }
-
-  /**
-   * Elimina conceptos redundantes o similares
-   * @param {Array} concepts - Lista de conceptos
-   * @returns {Array} - Lista sin redundancias
-   */
-  removeRedundantConcepts(concepts) {
-    // En una implementación real, usaríamos embeddings semánticos para detectar similitud
-    // Para esta demo, simplificamos comparando palabras similares
-    const uniqueConcepts = [];
-    const seenNames = new Set();
     
-    for (const concept of concepts) {
-      // Normalizar nombre para comparación
-      const normalizedName = concept.name.toLowerCase();
-      
-      // Si ya vimos un concepto similar, saltar
-      if (seenNames.has(normalizedName)) continue;
-      
-      // Verificar si hay alguno que comience con el mismo prefijo (>4 caracteres)
-      let isDuplicate = false;
-      if (normalizedName.length > 4) {
-        const prefix = normalizedName.substring(0, 4);
-        isDuplicate = [...seenNames].some(name => name.startsWith(prefix) && name !== normalizedName);
-      }
-      
-      if (!isDuplicate) {
-        seenNames.add(normalizedName);
-        uniqueConcepts.push(concept);
+    // Buscar definición común
+    const lowerName = concept.name.toLowerCase();
+    for (const [key, value] of Object.entries(commonDefinitions)) {
+      if (lowerName.includes(key)) {
+        return value;
       }
     }
     
-    return uniqueConcepts;
+    // Si no hay definición predefinida, generar una basada en el nivel del concepto
+    if (concept.level === 0) {
+      return `Concepto principal que representa ${lowerName}.`;
+    } else if (concept.level === 1) {
+      return `Área o categoría importante dentro de ${lowerName}.`;
+    } else {
+      return `Elemento específico relacionado con ${lowerName}.`;
+    }
+  }
+  
+  /**
+   * Busca ejemplos relevantes para un concepto
+   * @param {Object} concept - Concepto para el que buscar ejemplos
+   * @returns {Array} - Lista de ejemplos
+   */
+  async findRelevantExamples(concept) {
+    // En una implementación completa, aquí se utilizaría Semantic Scholar API
+    // Para esta versión, usamos ejemplos predefinidos basados en palabras clave
+    
+    const examplesByKeyword = {
+      tecnología: ["Inteligencia artificial", "Computación en la nube", "Internet de las cosas"],
+      educación: ["Aprendizaje basado en proyectos", "Aula invertida", "Aprendizaje colaborativo"],
+      inteligencia: ["Toma de decisiones", "Resolución de problemas", "Adaptabilidad"],
+      concepto: ["Ideas abstractas", "Categorías", "Representaciones mentales"],
+      mapa: ["Diagramas de flujo", "Mapas mentales", "Organizadores gráficos"]
+    };
+    
+    // Buscar ejemplos que coincidan con palabras clave en el nombre del concepto
+    const lowerName = concept.name.toLowerCase();
+    let examples = [];
+    
+    for (const [keyword, exampleList] of Object.entries(examplesByKeyword)) {
+      if (lowerName.includes(keyword)) {
+        examples = [...examples, ...exampleList];
+      }
+    }
+    
+    // Si ya tiene ejemplos, mantenerlos
+    if (concept.examples && concept.examples.length > 0) {
+      examples = [...concept.examples, ...examples];
+    }
+    
+    // Limitar a 3 ejemplos como máximo
+    return examples.slice(0, 3);
+  }
+  
+  /**
+   * Identifica términos relacionados o sinónimos para un concepto
+   * @param {Object} concept - Concepto a analizar
+   * @returns {Array} - Lista de términos relacionados
+   */
+  async identifyRelatedTerms(concept) {
+    // En una implementación completa, aquí se utilizaría ConceptNet
+    // Para esta versión, definimos relaciones simplificadas
+    
+    const relatedTermsByKeyword = {
+      tecnología: ["innovación", "desarrollo", "herramientas", "avance"],
+      inteligencia: ["conocimiento", "aprendizaje", "cognición", "razonamiento"],
+      artificial: ["sintético", "creado", "simulado"],
+      educación: ["enseñanza", "pedagogía", "formación", "aprendizaje"],
+      mapa: ["representación", "esquema", "diagrama", "organizador"],
+      concepto: ["idea", "noción", "constructo", "abstracción"]
+    };
+    
+    // Buscar términos relacionados
+    const lowerName = concept.name.toLowerCase();
+    let relatedTerms = [];
+    
+    for (const [keyword, termsList] of Object.entries(relatedTermsByKeyword)) {
+      if (lowerName.includes(keyword)) {
+        relatedTerms = [...relatedTerms, ...termsList];
+      }
+    }
+    
+    // Eliminar duplicados si los hay
+    return [...new Set(relatedTerms)];
+  }
+  
+  /**
+   * Clasifica un concepto en categorías y subcategorías
+   * @param {Object} concept - Concepto a clasificar
+   * @returns {Object} - Clasificación del concepto
+   */
+  async classifyConcept(concept) {
+    // Categorías por palabras clave
+    const categoriesByKeyword = {
+      tecnología: {category: "Tecnología", subcategories: ["Hardware", "Software", "Redes", "Innovación"]},
+      educación: {category: "Educación", subcategories: ["Metodologías", "Evaluación", "Recursos", "Instituciones"]},
+      inteligencia: {category: "Cognición", subcategories: ["Procesos", "Capacidades", "Desarrollo"]},
+      concepto: {category: "Epistemología", subcategories: ["Teorías", "Modelos", "Paradigmas"]},
+      mapa: {category: "Visualización", subcategories: ["Diagramas", "Esquemas", "Representaciones"]}
+    };
+    
+    // Categorías por defecto según nivel
+    const defaultCategories = [
+      {category: "Concepto Principal", subcategory: "Fundamento"},
+      {category: "Concepto Secundario", subcategory: "Componente"},
+      {category: "Concepto Derivado", subcategory: "Ejemplo"}
+    ];
+    
+    // Buscar categoría por palabra clave
+    const lowerName = concept.name.toLowerCase();
+    
+    for (const [keyword, categoryInfo] of Object.entries(categoriesByKeyword)) {
+      if (lowerName.includes(keyword)) {
+        // Seleccionar una subcategoría aleatoria
+        const randomIndex = Math.floor(Math.random() * categoryInfo.subcategories.length);
+        return {
+          category: categoryInfo.category,
+          subcategory: categoryInfo.subcategories[randomIndex]
+        };
+      }
+    }
+    
+    // Usar categoría predeterminada según nivel
+    const levelIndex = Math.min(concept.level, defaultCategories.length - 1);
+    return defaultCategories[levelIndex];
   }
 
   /**
-   * Valida la coherencia de relaciones entre conceptos
-   * @param {Array} relationships - Lista de relaciones
-   * @param {Array} concepts - Lista de conceptos válidos
-   * @returns {Array} - Relaciones validadas
+   * Paso 4: Verificar y Validar
+   * Asegura coherencia y relevancia del mapa conceptual
    */
-  validateRelationshipCoherence(relationships, concepts) {
-    // Crear un conjunto de IDs de conceptos válidos para búsqueda rápida
-    const validConceptIds = new Set(concepts.map(c => c.id));
+  async step4_VerifyAndValidate(result) {
+    console.log('Iniciando validación y verificación');
     
-    // Filtrar relaciones que conectan conceptos válidos
-    const validRelationships = relationships.filter(rel => 
-      validConceptIds.has(rel.source) && validConceptIds.has(rel.target)
+    // Obtener conceptos antes de la validación para métricas
+    const initialConceptCount = result.concepts.length;
+    const initialRelationshipCount = result.relationships.length;
+    
+    // 1. Filtrar conceptos irrelevantes
+    result.concepts = this.filterIrrelevantConcepts(result.concepts);
+    console.log(`Filtrado de conceptos irrelevantes: ${initialConceptCount} -> ${result.concepts.length}`);
+    
+    // 2. Eliminar conceptos redundantes
+    result.concepts = this.removeRedundantConcepts(result.concepts);
+    console.log(`Eliminación de conceptos redundantes: ${initialConceptCount} -> ${result.concepts.length}`);
+    
+    // 3. Validar coherencia de relaciones
+    result.relationships = this.validateRelationshipCoherence(
+      result.relationships, 
+      result.concepts
+    );
+    console.log(`Validación de relaciones: ${initialRelationshipCount} -> ${result.relationships.length}`);
+    
+    // 4. Calcular puntuación de coherencia
+    const coherenceScore = this.calculateCoherenceScore(result.concepts, result.relationships);
+    result.metadata.coherenceScore = coherenceScore;
+    console.log(`Puntuación de coherencia: ${coherenceScore.toFixed(2)}`);
+    
+    // 5. Registrar métricas de cambios
+    result.metadata.conceptsRemoved = initialConceptCount - result.concepts.length;
+    
+    return result;
+  }
+  
+  /**
+   * Filtra conceptos irrelevantes o poco importantes
+   * @param {Array} concepts - Lista de conceptos
+   * @returns {Array} - Lista de conceptos filtrada
+   */
+  filterIrrelevantConcepts(concepts) {
+    // Calcular la importancia promedio
+    const importanceValues = concepts.map(c => c.importance || 0);
+    const avgImportance = importanceValues.reduce((sum, val) => sum + val, 0) / 
+                         Math.max(1, importanceValues.length);
+    
+    // Eliminar conceptos con importancia significativamente menor al promedio
+    // excepto los conceptos principales (nivel 0 o isMainConcept)
+    return concepts.filter(concept => 
+      concept.level === 0 || 
+      concept.isMainConcept || 
+      (concept.importance || 0) >= (avgImportance * 0.4)
+    );
+  }
+  
+  /**
+   * Elimina conceptos redundantes o duplicados
+   * @param {Array} concepts - Lista de conceptos
+   * @returns {Array} - Lista sin conceptos redundantes
+   */
+  removeRedundantConcepts(concepts) {
+    const uniqueConcepts = [];
+    const seenNames = new Set();
+    
+    // Ordenar por importancia (descendente)
+    const sortedConcepts = [...concepts].sort((a, b) => 
+      (b.importance || 0) - (a.importance || 0)
     );
     
-    // Verificar coherencia semántica de cada relación
-    return validRelationships.filter(rel => {
-      // En una implementación real, usaríamos NLP para verificar si la relación tiene sentido
-      // Para esta demo, simplemente verificamos que el tipo de relación no sea contradictorio
+    // Mantener solo la versión más importante de cada concepto con nombre similar
+    sortedConcepts.forEach(concept => {
+      const normalizedName = concept.name.toLowerCase().trim();
       
-      // Por ejemplo, conceptos de nivel superior no deberían ser "parte de" conceptos inferiores
-      const sourceLevel = concepts.find(c => c.id === rel.source)?.level || 0;
-      const targetLevel = concepts.find(c => c.id === rel.target)?.level || 0;
-      
-      if (rel.type === 'es parte de' && sourceLevel <= targetLevel) {
-        return false;
+      // Verificar si ya existe un concepto similar
+      let isDuplicate = false;
+      for (const seenName of seenNames) {
+        // Considerar como duplicado si hay alta similitud
+        const similarity = this.calculateStringSimilarity(normalizedName, seenName);
+        if (similarity > 0.8) {
+          isDuplicate = true;
+          break;
+        }
       }
       
-      // Otras validaciones lógicas podrían implementarse aquí
-      return true;
+      // Si no es duplicado o es un concepto principal, conservarlo
+      if (!isDuplicate || concept.level === 0 || concept.isMainConcept) {
+        uniqueConcepts.push(concept);
+        seenNames.add(normalizedName);
+      }
     });
+    
+    return uniqueConcepts;
   }
-
+  
   /**
-   * Calcula una puntuación de coherencia para el mapa conceptual
+   * Calcula la similitud entre dos cadenas (0-1)
+   * @param {string} str1 - Primera cadena
+   * @param {string} str2 - Segunda cadena
+   * @returns {number} - Puntuación de similitud (0-1)
+   */
+  calculateStringSimilarity(str1, str2) {
+    // Algoritmo simple de similitud de Levenshtein
+    if (str1 === str2) return 1.0;
+    if (str1.length === 0 || str2.length === 0) return 0.0;
+    
+    // Verificar si una es subcadena de la otra
+    if (str1.includes(str2) || str2.includes(str1)) {
+      // Calcular proporción de longitud
+      const ratio = Math.min(str1.length, str2.length) / Math.max(str1.length, str2.length);
+      return 0.7 + (ratio * 0.3); // Entre 0.7 y 1.0 según proporción
+    }
+    
+    // Verificar palabras compartidas
+    const words1 = str1.split(/\s+/);
+    const words2 = str2.split(/\s+/);
+    
+    // Contar palabras comunes
+    let commonWords = 0;
+    for (const word of words1) {
+      if (words2.includes(word)) commonWords++;
+    }
+    
+    // Calcular proporción de palabras comunes
+    const totalUniqueWords = new Set([...words1, ...words2]).size;
+    return commonWords / Math.max(1, totalUniqueWords);
+  }
+  
+  /**
+   * Valida la coherencia de las relaciones y elimina las inválidas
+   * @param {Array} relationships - Lista de relaciones
+   * @param {Array} concepts - Lista de conceptos validados
+   * @returns {Array} - Lista de relaciones válidas
+   */
+  validateRelationshipCoherence(relationships, concepts) {
+    // Crear un conjunto con los IDs de conceptos para búsqueda rápida
+    const conceptIds = new Set(concepts.map(c => c.id));
+    
+    // Filtrar relaciones cuyos conceptos origen o destino ya no existan
+    const validRelationships = relationships.filter(relation => 
+      conceptIds.has(relation.source) && conceptIds.has(relation.target)
+    );
+    
+    return validRelationships;
+  }
+  
+  /**
+   * Calcula la puntuación de coherencia del mapa conceptual
    * @param {Array} concepts - Lista de conceptos
    * @param {Array} relationships - Lista de relaciones
    * @returns {number} - Puntuación de coherencia (0-1)
    */
   calculateCoherenceScore(concepts, relationships) {
-    // En una implementación real, esto usaría heurísticas NLP complejas
-    // Para esta demo, calculamos una puntuación simple
-    
-    // 1. Proporcionalidad de conceptos conectados
-    const connectedConceptIds = new Set();
+    // Factor 1: Proporción de conceptos relacionados
+    const conceptsInRelations = new Set();
     relationships.forEach(rel => {
-      connectedConceptIds.add(rel.source);
-      connectedConceptIds.add(rel.target);
+      conceptsInRelations.add(rel.source);
+      conceptsInRelations.add(rel.target);
     });
     
-    const connectivityRatio = connectedConceptIds.size / concepts.length;
+    const connectedConceptsRatio = conceptsInRelations.size / Math.max(1, concepts.length);
     
-    // 2. Densidad de relaciones significativas
-    const strongRelationships = relationships.filter(rel => rel.strength > 3).length;
-    const relationshipDensity = relationships.length / (concepts.length * (concepts.length - 1) / 2);
-    const significanceRatio = strongRelationships / Math.max(1, relationships.length);
+    // Factor 2: Distribución de niveles
+    const levelCounts = {};
+    concepts.forEach(c => {
+      const level = c.level || 0;
+      levelCounts[level] = (levelCounts[level] || 0) + 1;
+    });
     
-    // 3. Calcular puntuación final combinada
-    return (connectivityRatio * 0.4) + (relationshipDensity * 0.3) + (significanceRatio * 0.3);
+    // Idealmente debería haber una distribución pirámide (más generales, menos específicos)
+    const levels = Object.keys(levelCounts).map(Number).sort((a, b) => a - b);
+    let levelBalanceScore = 1.0;
+    
+    if (levels.length > 1) {
+      for (let i = 1; i < levels.length; i++) {
+        // Penalizar si hay más conceptos en niveles inferiores que en superiores
+        if (levelCounts[levels[i-1]] < levelCounts[levels[i]]) {
+          levelBalanceScore -= 0.2;
+        }
+      }
+    } else {
+      // Penalizar si solo hay un nivel
+      levelBalanceScore = 0.5;
+    }
+    
+    // Factor 3: Densidad de relaciones (debe ser razonable, ni muy pocas ni demasiadas)
+    const relationshipDensity = relationships.length / Math.max(1, concepts.length);
+    const densityScore = relationshipDensity <= 0.2 ? relationshipDensity * 2 : 
+                         relationshipDensity <= 2 ? 0.8 - (relationshipDensity - 1) * 0.2 :
+                         0.4 - Math.min(0.4, (relationshipDensity - 2) * 0.1);
+    
+    // Combinar factores (ponderados)                     
+    return (connectedConceptsRatio * 0.5) + 
+           (Math.max(0.2, levelBalanceScore) * 0.3) + 
+           (densityScore * 0.2);
+    result.metadata.relationshipsRemoved = initialRelationshipCount - result.relationships.length;
+    
+    return result;
   }
-  
-  // Métodos auxiliares para Paso 5: Optimizar Presentación Visual
+
+  /**
+   * Paso 5: Optimizar Presentación Visual
+   * Mejora la claridad y comprensión visual del mapa conceptual
+   */
+  async step5_OptimizeVisualPresentation(result, config) {
+    console.log('Optimizando presentación visual');
+    
+    // 1. Obtener configuración visual según estilo
+    const visualSettings = this.getEducationalVisualSettings(config.style);
+    
+    // 2. Asignar colores y formas a conceptos según nivel y categoría
+    result.concepts.forEach(concept => {
+      concept.formatting = {
+        color: visualSettings.nodeColors[concept.level] || visualSettings.nodeColors.default,
+        shape: concept.isMainConcept ? 'rectangle' : 
+               (concept.category === 'process' ? 'ellipse' : 'rectangle'),
+        fontSize: visualSettings.fontSizes[concept.level] || visualSettings.fontSizes.default,
+        bold: concept.level === 0 || concept.isMainConcept,
+        border: concept.isMainConcept ? 2 : 1
+      };
+    });
+    
+    // 3. Asignar estilos a relaciones según tipo
+    result.relationships.forEach(rel => {
+      rel.visualWeight = rel.strength || 1;
+      rel.style = rel.type === 'causal' ? 'thick' : 
+                 (rel.type === 'hierarchical' ? 'normal' : 'dashed');
+    });
+    
+    // 4. Asignar emojis a conceptos para mayor claridad visual
+    result.conceptEmojis = this.assignRelevantEmojis(result.concepts);
+    
+    // 5. Organizar conceptos por nivel para visualización jerárquica
+    result.conceptsByLevel = result.concepts.reduce((acc, concept) => {
+      const level = concept.level || 0;
+      if (!acc[level]) acc[level] = [];
+      acc[level].push(concept);
+      return acc;
+    }, {});
+    
+    // 6. Preparar notas adicionales como nubes de contexto
+    result.contextNotes = this.generateContextNotes(result.concepts);
+    
+    return result;
+  }
+
+  /**
+   * Genera notas de contexto para los conceptos principales
+   * @param {Array} concepts - Lista de conceptos
+   * @returns {Array} - Notas de contexto
+   */
+  generateContextNotes(concepts) {
+    const notes = [];
+    
+    // Identificar conceptos principales
+    const mainConcepts = concepts.filter(c => c.level === 0 || c.isMainConcept);
+    
+    mainConcepts.forEach(concept => {
+      // Si hay características importantes, agregarlas como nube de contexto
+      if (concept.characteristics && concept.characteristics.length > 0) {
+        const content = concept.characteristics.slice(0, 3).join("\n• ");
+        notes.push({
+          relatedConceptId: concept.id,
+          content: `${concept.name.charAt(0).toUpperCase() + concept.name.slice(1)}:\n• ${content}`
+        });
+      }
+      
+      // Si hay información de origen o etimología
+      if (concept.origin) {
+        notes.push({
+          relatedConceptId: concept.id,
+          content: `Origen y matiz:\n• ${concept.origin}`
+        });
+      }
+    });
+    
+    return notes;
+  }
+
+  /**
+   * Extrae atributos de un concepto
+   * @param {Object} concept - Concepto a analizar
+   * @param {string} text - Texto original
+   * @returns {Array} - Lista de atributos
+   */
+  extractConceptAttributes(concept, text) {
+    // En una implementación completa, esto usaría NLP para extraer atributos
+    // Por simplicidad, usamos una aproximación simulada
+    
+    const attributes = [];
+    
+    // Si tenemos ejemplos, convertirlos en atributos
+    if (concept.examples && concept.examples.length > 0) {
+      attributes.push({
+        name: "Ejemplos",
+        value: concept.examples.join(", "),
+        type: "example"
+      });
+    }
+    
+    // Si hay definición, extraer palabras clave como atributos
+    if (concept.definition) {
+      // Extraer características de la definición
+      const words = concept.definition.split(/\s+/);
+      const keyWords = words.filter(w => w.length > 4).slice(0, 3);
+      
+      if (keyWords.length > 0) {
+        attributes.push({
+          name: "Características",
+          subAttributes: keyWords.map(w => w.charAt(0).toUpperCase() + w.slice(1)),
+          type: "characteristic"
+        });
+      }
+    }
+    
+    return attributes;
+  }
 
   /**
    * Asigna emojis relevantes a categorías de conceptos
@@ -868,89 +1067,186 @@ class ConceptMapService {
   }
 
   /**
-   * Obtiene configuración visual para estilo educativo
-   * @param {string} style - Estilo visual seleccionado
-   * @returns {Object} - Configuración visual
+   * Genera un mapa conceptual en formato educativo usando Mermaid
+   * @param {Object} result - Resultado del procesamiento
+   * @param {Object} config - Configuración de generación
+   * @returns {string} - Contenido del mapa conceptual en Markdown con Mermaid
    */
-  getEducationalVisualSettings(style) {
-    const styles = {
-      educational: {
-        colorPalette: ['#3b82f6', '#10b981', '#f59e0b', '#6366f1', '#a855f7'],
-        fontOptions: {
-          title: 'bold 18px Arial, sans-serif',
-          concept: '16px Arial, sans-serif',
-          subconcept: '14px Arial, sans-serif',
-          detail: '12px Arial, sans-serif'
-        },
-        lineStyles: {
-          strong: '3px solid',
-          medium: '2px solid',
-          light: '1px solid'
-        },
-        spacing: {
-          nodePadding: '10px',
-          levelMargin: '30px'
-        }
-      },
-      minimal: {
-        colorPalette: ['#1f2937', '#374151', '#4b5563', '#6b7280', '#9ca3af'],
-        fontOptions: {
-          title: 'bold 16px "Helvetica Neue", sans-serif',
-          concept: '14px "Helvetica Neue", sans-serif',
-          subconcept: '13px "Helvetica Neue", sans-serif',
-          detail: '12px "Helvetica Neue", sans-serif'
-        },
-        lineStyles: {
-          strong: '2px solid',
-          medium: '1.5px solid',
-          light: '1px solid'
-        },
-        spacing: {
-          nodePadding: '8px',
-          levelMargin: '25px'
-        }
-      },
-      colorful: {
-        colorPalette: ['#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6'],
-        fontOptions: {
-          title: 'bold 18px "Comic Sans MS", cursive',
-          concept: '16px "Comic Sans MS", cursive',
-          subconcept: '14px "Comic Sans MS", cursive',
-          detail: '12px "Comic Sans MS", cursive'
-        },
-        lineStyles: {
-          strong: '3px dashed',
-          medium: '2px dashed',
-          light: '1px dashed'
-        },
-        spacing: {
-          nodePadding: '12px',
-          levelMargin: '35px'
-        }
-      },
-      academic: {
-        colorPalette: ['#1e40af', '#047857', '#b45309', '#4f46e5', '#7e22ce'],
-        fontOptions: {
-          title: 'bold 16px "Times New Roman", serif',
-          concept: '15px "Times New Roman", serif',
-          subconcept: '14px "Times New Roman", serif',
-          detail: '13px "Times New Roman", serif'
-        },
-        lineStyles: {
-          strong: '2px solid',
-          medium: '1.5px solid',
-          light: '1px solid'
-        },
-        spacing: {
-          nodePadding: '10px',
-          levelMargin: '30px'
-        }
-      }
-    };
+  generateEducationalConceptMap(result, config) {
+    // Comenzar con la estructura básica del mapa conceptual en Mermaid
+    let mermaidContent = '```mermaid\nflowchart TD\n';
     
-    return styles[style] || styles.educational;
+    // Identificar el concepto principal
+    const mainConcept = this.identifyMainConcept(result);
+    
+    // Agregar clases personalizadas para estilos
+    mermaidContent += '    %% Definición de clases para estilizar nodos\n';
+    mermaidContent += '    classDef mainConcept fill:#ffffff,stroke:#555,stroke-width:2.5px;\n';
+    mermaidContent += '    classDef attributeNode fill:#FFF9C4,stroke:#FBC02D;\n';
+    mermaidContent += '    classDef exampleNode fill:#ffffff,stroke:#2E7D32;\n';
+    mermaidContent += '    classDef originNode fill:#ffffff,stroke:#6D4C41;\n';
+    mermaidContent += '    classDef cloudNode fill:#ffffff,stroke:#795548,rx:25,ry:25;\n\n';
+    
+    // Agregar nodos principales
+    result.concepts.forEach(concept => {
+      if (concept.id === mainConcept.id) {
+        // Nodo principal (concepto central) con emoji o imagen si está disponible
+        let iconPrefix = '';
+        if (concept.icon) {
+          iconPrefix = `${concept.icon} `;
+        }
+        mermaidContent += `    ${concept.id}["${iconPrefix}${concept.name}"]\n`;
+        mermaidContent += `    class ${concept.id} mainConcept;\n`;
+      } else {
+        mermaidContent += `    ${concept.id}["${concept.name}"]\n`;
+      }
+      
+      // Si hay una definición, agregarla como un nodo relacionado
+      if (concept.definition) {
+        const defId = `${concept.id}_def`;
+        mermaidContent += `    ${defId}["${concept.definition}"]\n`;
+        mermaidContent += `    ${concept.id} --> ${defId}\n`;
+      }
+      
+      // Si hay atributos, mostrarlos como nodos con estilo amarillo
+      if (concept.attributes && concept.attributes.length > 0) {
+        concept.attributes.forEach((attr, index) => {
+          const attrId = `${concept.id}_attr_${index}`;
+          mermaidContent += `    ${attrId}["${attr.name}"]\n`;
+          mermaidContent += `    class ${attrId} attributeNode;\n`;
+          mermaidContent += `    ${concept.id} --> ${attrId}\n`;
+          
+          // Si el atributo tiene a su vez sub-atributos
+          if (attr.subAttributes && attr.subAttributes.length > 0) {
+            attr.subAttributes.forEach((subAttr, subIndex) => {
+              const subAttrId = `${concept.id}_attr_${index}_sub_${subIndex}`;
+              mermaidContent += `    ${subAttrId}["${subAttr}"]\n`;
+              mermaidContent += `    class ${subAttrId} attributeNode;\n`;
+              mermaidContent += `    ${attrId} --> ${subAttrId}\n`;
+            });
+          }
+        });
+      }
+      
+      // Si hay ejemplos, agregarlos como nodos con formato especial
+      if (concept.examples && concept.examples.length > 0) {
+        const exampleId = `${concept.id}_examples`;
+        let exampleContent = 'Ejemplos de uso:\n';
+        concept.examples.forEach(example => {
+          exampleContent += `• ${example}\n`;
+        });
+        mermaidContent += `    ${exampleId}["${exampleContent}"]\n`;
+        mermaidContent += `    class ${exampleId} exampleNode;\n`;
+        mermaidContent += `    ${concept.id} --> ${exampleId}\n`;
+      }
+      
+      // Si hay información de origen, agregarla como nodo con estilo propio
+      if (concept.origin) {
+        const originId = `${concept.id}_origin`;
+        let originContent = 'Origen y matiz:\n';
+        originContent += `• ${concept.origin}\n`;
+        mermaidContent += `    ${originId}["${originContent}"]\n`;
+        mermaidContent += `    class ${originId} originNode;\n`;
+        mermaidContent += `    ${concept.id} --> ${originId}\n`;
+      }
+    });
+    
+    // Agregar nodos de contexto adicional como nubes
+    if (result.contextNotes && result.contextNotes.length > 0) {
+      result.contextNotes.forEach((note, index) => {
+        const noteId = `context_${index}`;
+        mermaidContent += `    ${noteId}["${note.content}"]\n`;
+        mermaidContent += `    class ${noteId} cloudNode;\n`;
+        mermaidContent += `    ${note.relatedConceptId} --> ${noteId}\n`;
+      });
+    }
+    
+    // Agregar relaciones entre conceptos
+    result.relationships.forEach(rel => {
+      mermaidContent += `    ${rel.source} --> |"${rel.label || ''}"|${rel.target}\n`;
+    });
+    
+    // Cerrar el gráfico Mermaid
+    mermaidContent += '```';
+    
+    // Agregar contenido markdown antes y después del mapa para mayor contexto
+    let markdownContent = `# Mapa Conceptual: ${mainConcept.name}\n\n`;
+    
+    if (result.metadata.summary) {
+      markdownContent += `## Resumen\n${result.metadata.summary}\n\n`;
+    }
+    
+    markdownContent += mermaidContent;
+    
+    return markdownContent;
   }
-
+  
+  /**
+   * Identifica el concepto principal del mapa conceptual
+   * @param {Object} result - Resultado del procesamiento
+   * @returns {Object} - El concepto principal
+   */
+  identifyMainConcept(result) {
+    // Si hay un concepto marcado explícitamente como principal, usarlo
+    const explicitMain = result.concepts.find(c => c.isMainConcept);
+    if (explicitMain) {
+      return explicitMain;
+    }
+    
+    // De lo contrario, usar el concepto con mayor importancia o el primer concepto
+    result.concepts.sort((a, b) => (b.importance || 0) - (a.importance || 0));
+    return result.concepts[0] || { id: 'main', name: 'Concepto Principal' };
+  }
+  
+  /**
+   * Identifica el tema principal del mapa conceptual
+   * @param {Object} result - Resultado del procesamiento
+   * @returns {string} - Nombre del tema principal
+   */
+  identifyMainTopic(result) {
+    // Buscar concepto principal
+    const mainConcept = this.identifyMainConcept(result);
+    return mainConcept?.name || 'Mapa Conceptual';
+  }
+  
+  /**
+   * Genera un resumen descriptivo del mapa conceptual para la etapa de Conclusión
+   * @param {Object} result - Resultado del mapa conceptual
+   * @returns {string} - Resumen descriptivo detallado
+   */
+  generateConceptualSummary(result) {
+    // En una implementación real, esto generaría un resumen completo basado en el análisis
+    // Por ahora, generamos un resumen básico
+    
+    const mainConcept = this.identifyMainConcept(result);
+    const conceptCount = result.concepts.length;
+    const relationshipCount = result.relationships.length;
+    
+    let summary = `Este mapa conceptual analiza "${mainConcept.name}" a través de ${conceptCount} conceptos interconectados mediante ${relationshipCount} relaciones. `;
+    
+    // Agregar información sobre jerarquía
+    const levels = [...new Set(result.concepts.map(c => c.level))].sort();
+    if (levels.length > 1) {
+      summary += `Está organizado en ${levels.length} niveles jerárquicos, desde conceptos generales hasta específicos. `;
+    }
+    
+    // Mencionar elementos enriquecidos
+    const withDefinitions = result.concepts.filter(c => c.definition).length;
+    const withExamples = result.concepts.filter(c => c.examples && c.examples.length > 0).length;
+    
+    if (withDefinitions > 0 || withExamples > 0) {
+      summary += `Incluye ${withDefinitions} definiciones conceptuales y ${withExamples} ejemplos ilustrativos para facilitar la comprensión. `;
+    }
+    
+    // Mencionar características visuales
+    summary += `La visualización destaca conceptos clave mediante una organización jerárquica con nodos y conexiones diferenciadas por color y formato.`;
+    
+    return summary;
+  }
+  
+  // Los métodos auxiliares como extractMainConcepts, findOriginalForm, etc., irían aquí
+  // pero no se incluyen por brevedad en esta implementación
+  
   /**
    * Crea un grafo de conocimiento
    * @param {Array} concepts - Lista de conceptos
@@ -958,20 +1254,22 @@ class ConceptMapService {
    * @returns {Object} - Grafo de conocimiento
    */
   createKnowledgeGraph(concepts, relationships) {
+    // Convertir a formato de grafo para visualización y análisis
     return {
       nodes: concepts.map(c => ({
         id: c.id,
-        label: c.originalForm || c.name,
+        label: c.name,
         level: c.level,
         importance: c.importance,
-        isCritical: c.isCritical,
-        definition: c.definition,
-        examples: c.examples,
-        relatedTerms: c.relatedTerms,
-        formatting: c.formatting
+        category: c.category,
+        data: {
+          definition: c.definition,
+          examples: c.examples,
+          attributes: c.attributes
+        }
       })),
+      
       edges: relationships.map(r => ({
-        id: r.id,
         source: r.source,
         target: r.target,
         label: r.type,
@@ -979,300 +1277,6 @@ class ConceptMapService {
         visualWeight: r.visualWeight
       }))
     };
-  }
-
-  /**
-   * Genera el contenido del mapa conceptual en formato educativo
-   * @param {Object} result - Resultado del procesamiento
-   * @param {Object} config - Configuración
-   * @returns {string} - Contenido en formato markdown estructurado que sigue las pautas de jerarquización, síntesis e impacto visual
-   */
-  generateEducationalConceptMap(result, config) {
-    // Agrupar conceptos por nivel para organización jerárquica
-    const conceptsByLevel = {};
-    result.concepts.forEach(concept => {
-      if (!conceptsByLevel[concept.level]) {
-        conceptsByLevel[concept.level] = [];
-      }
-      conceptsByLevel[concept.level].push(concept);
-    });
-    
-    // Ordenar conceptos por importancia dentro de cada nivel
-    Object.keys(conceptsByLevel).forEach(level => {
-      conceptsByLevel[level].sort((a, b) => b.importance - a.importance);
-    });
-    
-    // Obtener emojis para conceptos (si están disponibles)
-    const emojis = result.conceptEmojis || {};
-    
-    // Crear mapa en formato visual con Mermaid (diagrama de flujo)
-    let content = '# MAPA CONCEPTUAL\n\n';
-    content += '```mermaid\ngraph TD;\n';
-    
-    // Asignar colores por nivel
-    const nodeColors = {
-      0: '#f5923e', // Naranja para nivel principal
-      1: '#f5a052', // Naranja más claro para nivel 1
-      2: '#f7b474', // Naranja aún más claro para nivel 2
-      3: '#f9c696'  // Naranja muy claro para nivel 3
-    };
-    
-    // Estilo para los nodos
-    content += '    %% Estilos de nodos por nivel\n';
-    content += '    classDef nivel0 fill:#f5923e,stroke:#d97b29,color:black,font-weight:bold,font-size:18px;\n';
-    content += '    classDef nivel1 fill:#f5a052,stroke:#d97b29,color:black,font-weight:bold,font-size:16px;\n';
-    content += '    classDef nivel2 fill:#f7b474,stroke:#d97b29,color:black,font-size:14px;\n';
-    content += '    classDef nivel3 fill:#f9c696,stroke:#d97b29,color:black,font-size:13px;\n';
-    
-    // Añadir indicadores de nivel
-    if (Object.keys(conceptsByLevel).length > 1) {
-      content += '    %% Indicadores de nivel\n';
-      content += '    NIVEL1["NIVEL 1"] --> FLECHA1{"➡️"};\n';
-      content += '    NIVEL2["NIVEL 2"] --> FLECHA2{"➡️"};\n';
-      content += '    NIVEL3["NIVEL 3"] --> FLECHA3{"➡️"};\n';
-      content += '    class NIVEL1,NIVEL2,NIVEL3 nivel0;\n';
-    }
-    
-    // Mapeo de IDs para evitar caracteres problemáticos en Mermaid
-    const idMap = new Map();
-    let idCounter = 0;
-    
-    // Función para obtener un ID válido para Mermaid
-    const getValidId = (concept) => {
-      if (!idMap.has(concept.id)) {
-        idMap.set(concept.id, `node${idCounter++}`);
-      }
-      return idMap.get(concept.id);
-    };
-    
-    // Generar concepto de nivel 0 (principal/título)
-    if (conceptsByLevel[0] && conceptsByLevel[0].length > 0) {
-      const mainConcept = conceptsByLevel[0][0]; // Tomar el concepto principal más importante
-      const mainId = getValidId(mainConcept);
-      
-      // Título principal siempre en mayúsculas
-      const mainName = (mainConcept.originalForm || mainConcept.name).toUpperCase();
-      content += `    ${mainId}["${mainName}"];\n`;
-      content += `    class ${mainId} nivel0;\n\n`;
-      
-      // Si hay más de un concepto principal, agregar el modificador "formado por"
-      if (conceptsByLevel[1] && conceptsByLevel[1].length > 0) {
-        content += `    %% Conexión con nivel 1\n`;
-        
-        // Conectar con cada concepto de nivel 1 individualmente (evitando el operador &)
-        conceptsByLevel[1].forEach(subConcept => {
-          const subId = getValidId(subConcept);
-          content += `    ${mainId} -->|"formado por"| ${subId};\n`;
-        });
-        content += '\n';
-      }
-    }
-    
-    // Generar conceptos de nivel 1
-    if (conceptsByLevel[1]) {
-      content += `    %% Conceptos de nivel 1\n`;
-      
-      conceptsByLevel[1].forEach(concept => {
-        const conceptId = getValidId(concept);
-        // Nombre en mayúsculas para nivel 1
-        const conceptName = (concept.originalForm || concept.name).charAt(0).toUpperCase() + 
-                           (concept.originalForm || concept.name).slice(1);
-        
-        content += `    ${conceptId}["${conceptName}"];\n`;
-        content += `    class ${conceptId} nivel1;\n`;
-        
-        // Agregar texto "su función es" para conceptos de nivel 1 que estén conectados a nivel 2
-        const childRelations = result.relationships.filter(rel => rel.source === concept.id);
-        // Obtener conceptos hijos de nivel 2
-        const childConcepts = conceptsByLevel[2]?.filter(child => 
-          childRelations.some(rel => rel.target === child.id)
-        ) || [];
-        
-        // Conectar con cada hijo individualmente (evitando operadores &)
-        if (childConcepts.length > 0) {
-          childConcepts.forEach(childConcept => {
-            const childId = getValidId(childConcept);
-            content += `    ${conceptId} -->|"su función es"| ${childId};\n`;
-          });
-        }
-      });
-      content += '\n';
-    }
-    
-    // Generar conceptos de nivel 2
-    if (conceptsByLevel[2]) {
-      content += `    %% Conceptos de nivel 2\n`;
-      
-      conceptsByLevel[2].forEach(concept => {
-        const conceptId = getValidId(concept);
-        // Primera letra en mayúscula para nivel 2
-        const conceptName = (concept.originalForm || concept.name).charAt(0).toUpperCase() + 
-                           (concept.originalForm || concept.name).slice(1);
-        
-        content += `    ${conceptId}["${conceptName}"];\n`;
-        content += `    class ${conceptId} nivel2;\n`;
-        
-        // Agregar conexiones con nivel 3 si existen
-        const childRelations = result.relationships.filter(rel => rel.source === concept.id);
-        const childConcepts = conceptsByLevel[3]?.filter(child => 
-          childRelations.some(rel => rel.target === child.id)
-        ) || [];
-        
-        if (childConcepts.length > 0) {
-          // Determinar el tipo de conector basado en la relación
-          childConcepts.forEach(childConcept => {
-            const relation = childRelations.find(rel => rel.target === childConcept.id);
-            const childId = getValidId(childConcept);
-            
-            // Texto de la relación (usar "el" o "los" según el contexto)
-            let relationText = '';
-            // Simplificación: usar artículos específicos según contexto pero mantener simplicidad
-            if (relation && relation.type) {
-              relationText = relation.type.toLowerCase();
-              if (!relationText.startsWith('se ') && !relationText.startsWith('el ') && 
-                 !relationText.startsWith('la ') && !relationText.startsWith('los ') && 
-                 !relationText.startsWith('las ')) {
-                // Si no tiene artículo, agregar "el" como predeterminado
-                relationText = `el ${relationText}`;
-              }
-            } else {
-              relationText = childConcept.name.includes('s') ? 'los' : 'el';
-            }
-            
-            content += `    ${conceptId} -->|"${relationText}"| ${childId};\n`;
-          });
-        }
-      });
-      content += '\n';
-    }
-    
-    // Generar conceptos de nivel 3
-    if (conceptsByLevel[3]) {
-      content += `    %% Conceptos de nivel 3\n`;
-      
-      conceptsByLevel[3].forEach(concept => {
-        const conceptId = getValidId(concept);
-        // Primera letra en mayúscula para nivel 3
-        const conceptName = (concept.originalForm || concept.name).charAt(0).toUpperCase() + 
-                           (concept.originalForm || concept.name).slice(1);
-        
-        content += `    ${conceptId}["${conceptName}"];\n`;
-        content += `    class ${conceptId} nivel3;\n`;
-        
-        // Añadir conexiones "se convierte" entre conceptos de nivel 3 si existen
-        const relationships = result.relationships.filter(rel => 
-          rel.source === concept.id && 
-          conceptsByLevel[3].some(c => c.id === rel.target)
-        );
-        
-        relationships.forEach(relation => {
-          const targetConcept = result.concepts.find(c => c.id === relation.target);
-          if (targetConcept) {
-            const targetId = getValidId(targetConcept);
-            let relationText = relation.type || 'se convierte';
-            content += `    ${conceptId} -->|"${relationText}"| ${targetId};\n`;
-          }
-        });
-      });
-    }
-    
-    // Cerrar diagrama Mermaid
-    content += '```\n\n';
-    
-    // Agregar nota sobre la estructura
-    content += '**Nota:** Este mapa conceptual presenta una estructura jerárquica de ' + 
-              Object.keys(conceptsByLevel).length + ' niveles, organizados de mayor a menor ' +
-              'especificidad, con ' + result.concepts.length + ' conceptos clave y ' + 
-              result.relationships.length + ' relaciones entre ellos.\n\n';
-    
-    return content;
-  }
-
-  /**
-   * Genera un resumen descriptivo del mapa conceptual para la etapa de Conclusión
-   * @param {Object} result - Resultado del mapa conceptual
-   * @returns {string} - Resumen descriptivo detallado
-   */
-  generateConceptualSummary(result) {
-    // Extraer conceptos principales (nivel 0)
-    const mainConcepts = result.concepts.filter(c => c.level === 0);
-    
-    // Encontrar los conceptos más importantes por nivel
-    const topConceptsByLevel = {};
-    for (let level = 0; level <= 2; level++) {
-      const conceptsAtLevel = result.concepts.filter(c => c.level === level);
-      const sortedByImportance = [...conceptsAtLevel].sort((a, b) => b.importance - a.importance);
-      topConceptsByLevel[level] = sortedByImportance.slice(0, 3); // Top 3 por nivel
-    }
-    
-    // Calcular estadísticas generales
-    const conceptsByLevel = result.concepts.reduce((acc, c) => {
-      acc[c.level] = (acc[c.level] || 0) + 1;
-      return acc;
-    }, {});
-    
-    // Tipos de relaciones frecuentes
-    const relationshipTypes = result.relationships.reduce((acc, r) => {
-      acc[r.type] = (acc[r.type] || 0) + 1;
-      return acc;
-    }, {});
-    
-    const topRelationshipTypes = Object.entries(relationshipTypes)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 3)
-      .map(([type, count]) => `"${type}" (${count})`);
-    
-    // Construir resumen estructurado
-    let summary = `Este mapa conceptual representa una estructura de conocimiento con ${result.concepts.length} conceptos `;
-    summary += `organizados en ${Object.keys(conceptsByLevel).length} niveles jerárquicos, `;
-    summary += `conectados mediante ${result.relationships.length} relaciones significativas.\n\n`;
-    
-    // Añadir información sobre conceptos principales
-    if (mainConcepts.length > 0) {
-      summary += `Los conceptos principales son: ${mainConcepts.map(c => c.name).join(', ')}. `;
-    }
-    
-    // Añadir información sobre relaciones principales
-    if (topRelationshipTypes.length > 0) {
-      summary += `Las principales relaciones identificadas son: ${topRelationshipTypes.join(', ')}.\n\n`;
-    }
-    
-    // Añadir estadísticas de niveles
-    summary += `Distribución jerárquica:\n`;
-    Object.entries(conceptsByLevel).forEach(([level, count]) => {
-      const levelName = level === '0' ? 'Principal' : 
-                       level === '1' ? 'Secundario' : 
-                       level === '2' ? 'Terciario' : `Nivel ${level}`;
-      summary += `- ${levelName}: ${count} conceptos\n`;
-    });
-    
-    // Añadir estadísticas de enriquecimiento
-    if (result.metadata.enrichmentStats) {
-      const { definitionsCount, examplesCount, relatedTermsCount } = result.metadata.enrichmentStats;
-      summary += `\nEnriquecimiento semántico: ${definitionsCount} definiciones, `;
-      summary += `${examplesCount} ejemplos y ${relatedTermsCount} términos relacionados.`;
-    }
-    
-    // Añadir puntuación de coherencia si está disponible
-    if (result.metadata.coherenceScore !== undefined) {
-      const coherencePercent = Math.round(result.metadata.coherenceScore * 100);
-      summary += `\nLa coherencia global del mapa es del ${coherencePercent}%.`;
-    }
-    
-    // Añadir recomendaciones basadas en el análisis
-    summary += `\n\nRecomendaciones para uso educativo:\n`;
-    if (result.concepts.length > 15) {
-      summary += `- Este mapa es extenso y puede ser útil para una visión completa del tema.\n`;
-    } else {
-      summary += `- Este mapa es conciso y puede ser útil para introducir conceptos básicos.\n`;
-    }
-    
-    // Añadir una conclusión final
-    summary += `\nEste mapa conceptual está optimizado para facilitar la comprensión `;
-    summary += `y el aprendizaje del tema tratado, estableciendo conexiones significativas `;
-    summary += `entre conceptos y proporcionando contexto a través de definiciones y ejemplos.`;
-    
-    return summary;
   }
 }
 
