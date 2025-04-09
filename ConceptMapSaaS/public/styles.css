@@ -179,7 +179,7 @@ nav a.active {
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-md);
   overflow: hidden;
-  min-height: 600px;
+  min-height: 700px;
 }
 
 .sidebar {
@@ -247,6 +247,7 @@ select, input[type="range"] {
   flex: 1;
   display: flex;
   flex-direction: column;
+  overflow: hidden; /* Evita scrollbars innecesarios */
 }
 
 .tabs {
@@ -273,7 +274,9 @@ select, input[type="range"] {
 }
 
 .tab-content.active {
-  display: block;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
 }
 
 .text-input-container {
@@ -329,26 +332,74 @@ select, input[type="range"] {
 
 #markmap-container {
   width: 100%;
-  height: 500px;
+  height: 600px;
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
-  overflow: hidden;
+  overflow: auto;
+  background-color: white;
+  margin-top: 1rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
 }
 
-/* Markmap Container */
+/* Estilos para el contenedor de Mermaid */
 .mermaid-container {
   width: 100%;
-  min-height: 500px;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
+  min-height: 550px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
   padding: 1rem;
   overflow: auto;
-  background-color: #fff;
 }
 
-#markmap-container {
-  padding: 1rem;
-  min-height: 600px;
+/* Estilos para el SVG del mapa conceptual */
+.concept-map-svg {
+  max-width: 100% !important;
+  height: auto !important;
+  min-height: 500px;
+}
+
+/* Mejoras para los nodos del mapa conceptual */
+.concept-map-svg .node rect,
+.concept-map-svg .node circle,
+.concept-map-svg .node ellipse,
+.concept-map-svg .node polygon,
+.concept-map-svg .node path {
+  fill: #FF9D6C;
+  stroke: #FF7D3C;
+  stroke-width: 2px;
+  rx: 5px;
+  ry: 5px;
+}
+
+/* Estilos para las etiquetas */
+.concept-map-svg .edgeLabel {
+  background-color: #ffffff;
+  padding: 2px 5px;
+  border-radius: 4px;
+  font-size: 0.85rem;
+}
+
+/* Estilos para los textos dentro de los nodos */
+.concept-map-svg .label text {
+  font-family: var(--font-sans);
+  font-size: 0.95rem;
+  fill: #000000;
+}
+
+/* Mejoras para los conectores */
+.concept-map-svg .edgePath .path {
+  stroke: #333333;
+  stroke-width: 1.5px;
+}
+
+/* Estilos para las flechas de nivel */
+.concept-map-svg .edgePath.nivel-arrow .path {
+  stroke-width: 2.5px;
+  stroke: #000000;
 }
 
 /* Custom Concept Map Styles */
