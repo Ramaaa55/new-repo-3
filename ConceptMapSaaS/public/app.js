@@ -14,83 +14,6 @@ document.addEventListener('DOMContentLoaded', function() {
     let markmapInstance = null;
     let currentMapData = null;
     
-    // Función para garantizar que el mapa conceptual base siempre sea visible
-    function ensureBasicConceptMap() {
-        // Obtener el contenedor del mapa
-        const markmapContainer = document.getElementById('markmap-container');
-        if (!markmapContainer) {
-            console.error('No se encontró el contenedor del mapa conceptual');
-            return;
-        }
-        
-        // Si el contenedor ya tiene contenido que incluye el mapa garantizado, no hacer nada
-        if (markmapContainer.querySelector('#guaranteed-map')) {
-            return;
-        }
-        
-        console.log('Creando mapa conceptual pedagógico garantizado');
-        
-        // Crear el mapa garantizado con las 6 etapas críticas
-        const guaranteedMap = document.createElement('div');
-        guaranteedMap.id = 'guaranteed-map';
-        guaranteedMap.className = 'concept-map-visual';
-        guaranteedMap.style = 'padding: 20px; font-family: Arial, sans-serif; background-color: white; margin-top: 20px;';
-        
-        // Crear el contenido del mapa pedagógico con las 6 etapas críticas
-        guaranteedMap.innerHTML = `
-            <div class="main-concept" style="text-align: center; margin-bottom: 30px;">
-                <div style="display: inline-block; padding: 15px 30px; background-color: #3498db; 
-                    color: white; border-radius: 50px; font-weight: bold; font-size: 18px;">
-                    MAPA CONCEPTUAL PEDAGÓGICO
-                </div>
-            </div>
-            
-            <div class="concept-row" style="display: flex; justify-content: space-around; margin-bottom: 30px;">
-                <div class="concept-node" style="padding: 12px 25px; background-color: #9b59b6; 
-                    color: white; border-radius: 50px; max-width: 200px; text-align: center;">
-                    Organización y Jerarquía
-                </div>
-                <div class="concept-node" style="padding: 12px 25px; background-color: #9b59b6; 
-                    color: white; border-radius: 50px; max-width: 200px; text-align: center;">
-                    Razonamiento y Comprensión
-                </div>
-                <div class="concept-node" style="padding: 12px 25px; background-color: #9b59b6; 
-                    color: white; border-radius: 50px; max-width: 200px; text-align: center;">
-                    Enriquecimiento Semántico
-                </div>
-            </div>
-            
-            <div class="concept-row" style="display: flex; justify-content: space-around;">
-                <div class="concept-node" style="padding: 10px 20px; background-color: #f1c40f; 
-                    color: #7d6608; border-radius: 50px; max-width: 180px; text-align: center;">
-                    Validación y Verificación
-                </div>
-                <div class="concept-node" style="padding: 10px 20px; background-color: #f1c40f; 
-                    color: #7d6608; border-radius: 50px; max-width: 180px; text-align: center;">
-                    Estética Adaptativa
-                </div>
-                <div class="concept-node" style="padding: 10px 20px; background-color: #f1c40f; 
-                    color: #7d6608; border-radius: 50px; max-width: 180px; text-align: center;">
-                    Conclusión Descriptiva
-                </div>
-            </div>
-            
-            <div class="information-note" style="margin-top: 30px; text-align: center; font-style: italic; color: #555;">
-                Mapa base con estructura pedagógica y elipses para conceptos
-            </div>
-        `;
-        
-        // Limpiar el contenedor y añadir el mapa garantizado
-        markmapContainer.innerHTML = '';
-        markmapContainer.appendChild(guaranteedMap);
-        
-        // Crear el contenedor dinámico para mapas generados
-        const dynamicContainer = document.createElement('div');
-        dynamicContainer.id = 'dynamic-map-container';
-        dynamicContainer.className = 'dynamic-map-container';
-        markmapContainer.appendChild(dynamicContainer);
-    }
-
     // Cambio de pestañas
     tabBtns.forEach(btn => {
         btn.addEventListener('click', () => {
@@ -102,11 +25,6 @@ document.addEventListener('DOMContentLoaded', function() {
             btn.classList.add('active');
             const tabId = btn.getAttribute('data-tab');
             document.getElementById(`${tabId}-tab`).classList.add('active');
-            
-            // Si es la pestaña de salida, asegurar que el mapa conceptual esté visible
-            if (tabId === 'output') {
-                ensureBasicConceptMap();
-            }
         });
     });
     
@@ -115,23 +33,22 @@ document.addEventListener('DOMContentLoaded', function() {
         textInput.value = '';
     });
     
-    // Generar mapa conceptual
+    // Función para procesar el texto y generar el mapa conceptual
     generateBtn.addEventListener('click', async () => {
-        const text = textInput.value.trim();
-        
-        if (!text) {
-            showNotification('Por favor, ingresa un texto para generar el mapa conceptual', 'error');
-            return;
-        }
-        
-        // Asegurar que el mapa conceptual base esté visible en el contenedor
-        ensureBasicConceptMap();
-        
-        // Mostrar indicador de carga
-        showLoading(true);
-        
         try {
-            // Recopilar opciones de configuración
+            // Obtener el texto del área de texto
+            const text = textInput.value.trim();
+            
+            // Validar que haya texto
+            if (!text) {
+                showNotification('Por favor, ingresa un texto para generar el mapa conceptual', 'error');
+                return;
+            }
+            
+            // Mostrar indicador de carga
+            showLoading(true);
+            
+            // Opciones para la generación del mapa
             const options = {
                 stages: {
                     organization: document.getElementById('stage1').checked,
@@ -145,7 +62,7 @@ document.addEventListener('DOMContentLoaded', function() {
             };
             
             console.log('Opciones de configuración:', options);
-            console.log('Texto a procesar (primeros 50 caracteres):', text.substring(0, 50));
+            console.log('Texto a procesar (primeros 50 caracteres):', text ? text.substring(0, 50) : 'No hay texto');
             
             // Simular procesamiento por etapas (en una implementación real, esto sería una llamada a la API)
             await simulateProcessing(options);
@@ -173,12 +90,39 @@ document.addEventListener('DOMContentLoaded', function() {
             console.log('Datos recibidos:', data);
             
             if (data.success) {
-                // Guardar los datos del mapa - accediendo a la estructura correcta
-                currentMapData = data.result.content;
-                console.log('Contenido del mapa (primeros 100 caracteres):', data.result.content.substring(0, 100));
+                // Determinar la estructura de datos correcta
+                let contentData = null;
+                
+                if (data.result.content) {
+                    // La API devolvió la estructura esperada directamente
+                    contentData = data.result.content;
+                    console.log('Usando contenido directo de result.content');
+                } else if (data.result) {
+                    // La API devolvió result pero sin .content
+                    contentData = data.result;
+                    console.log('Usando contenido de result');
+                }
+                
+                if (!contentData) {
+                    console.error('No se pudo determinar la estructura del contenido');
+                    contentData = {
+                        concepts: [],
+                        relationships: [],
+                        title: "Error: No se pudo cargar el mapa"
+                    };
+                }
+                
+                // Guardar los datos del mapa
+                currentMapData = contentData;
+                
+                // Registro detallado para depuración
+                console.log('Contenido del mapa conceptual:', {
+                    conceptCount: contentData.concepts ? contentData.concepts.length : 0,
+                    relationshipCount: contentData.relationships ? contentData.relationships.length : 0
+                });
                 
                 // Renderizar el mapa conceptual
-                renderMarkmap(data.result.content);
+                await renderModularConceptMap(contentData);
                 
                 // Cambiar a la pestaña de salida
                 document.querySelector('[data-tab="output"]').click();
@@ -241,365 +185,422 @@ document.addEventListener('DOMContentLoaded', function() {
         document.querySelector('[data-tab="input"]').click();
     });
     
-    // Función para renderizar el mapa conceptual usando Mermaid
-    function renderMarkmap(content) {
-        if (!content) {
-            showNotification('No hay contenido para renderizar', 'error');
-            return;
-        }
-        
-        // Obtener el contenedor principal del mapa
-        const markmapContainer = document.getElementById('markmap-container');
-        if (!markmapContainer) {
-            console.error('No se encontró el contenedor principal del mapa conceptual');
-            showNotification('Error: No se puede mostrar el mapa conceptual', 'error');
-            return;
-        }
-        
-        // Buscar o crear el contenedor dinámico
-        let dynamicContainer = document.getElementById('dynamic-map-container');
-        if (!dynamicContainer) {
-            console.log('Creando nuevo contenedor dinámico para el mapa');
-            dynamicContainer = document.createElement('div');
-            dynamicContainer.id = 'dynamic-map-container';
-            dynamicContainer.className = 'dynamic-map-container';
-            markmapContainer.appendChild(dynamicContainer);
-        }
-        
-        // Limpiar sólo el contenedor dinámico (preservando el mapa garantizado)
-        dynamicContainer.innerHTML = '';
-        
+    /**
+     * Renderiza el mapa conceptual utilizando la biblioteca adecuada según el formato
+     * @param {string} data - Contenido del mapa conceptual en formato XML, Markdown o Mermaid
+     * @param {string} format - Formato de visualización ('markmap', 'mermaid', 'd3')
+     */
+    async function renderMarkmap(data, container = null) {
         try {
-            console.log('Renderizando contenido:', typeof content);
-            console.log('Muestra del contenido:', typeof content === 'string' ? content.substring(0, 100) : JSON.stringify(content).substring(0, 100));
+            // Si no se proporciona contenedor, usar el predeterminado
+            const targetContainer = container || document.getElementById('diagramContainer');
+            targetContainer.innerHTML = '';
             
-            // Determinar el tipo de contenido
-            let htmlContent = '';
+            let markdownContent = '';
             
-            if (typeof content === 'string') {
-                // Es un string, asumimos que es HTML o texto plano
-                htmlContent = content;
-            } else if (content && typeof content === 'object') {
-                // Es un objeto JSON
-                htmlContent = `<pre>${JSON.stringify(content, null, 2)}</pre>`;
+            // Verificar si los datos son del formato antiguo o nuevo
+            if (typeof data === 'string') {
+                // Formato antiguo - contenido markdown directo
+                markdownContent = data;
             } else {
-                showNotification('Formato de contenido no válido', 'error');
-                return;
+                // Formato nuevo - objeto con conceptos y relaciones
+                markdownContent = convertConceptsToMarkdown(data);
             }
             
-            // Crear un contenedor para el contenido HTML
-            const div = document.createElement('div');
-            div.className = 'concept-map-container';
-            div.innerHTML = htmlContent;
-            markmapContainer.appendChild(div);
+            // Crear un elemento para Markmap
+            const markmapContainer = document.createElement('div');
+            markmapContainer.style.width = '100%';
+            markmapContainer.style.height = '70vh';
+            markmapContainer.style.overflow = 'hidden';
+            targetContainer.appendChild(markmapContainer);
             
-            // Extraer código Mermaid del contenido HTML
-            let mermaidCode = '';
-            const mermaidDivs = div.querySelectorAll('code');
-            mermaidDivs.forEach((mermaidDiv) => {
-                if (mermaidDiv.parentElement.tagName === 'PRE' && 
-                   (mermaidDiv.textContent.includes('graph TD') || 
-                    mermaidDiv.textContent.includes('flowchart TD') ||
-                    mermaidDiv.textContent.includes('graph LR') ||
-                    mermaidDiv.textContent.includes('flowchart LR'))) {
-                    mermaidCode = mermaidDiv.textContent.trim();
-                    console.log('Mermaid detectado:', mermaidCode.substring(0, 100));
-                    // Eliminar el bloque de código original
-                    mermaidDiv.parentElement.remove();
+            // Verificar que markmap está correctamente cargado
+            if (!window.markmap) {
+                console.error('La biblioteca markmap no está disponible');
+                throw new Error('No se pudo cargar la biblioteca markmap');
+            }
+            
+            // Verificar que los componentes necesarios existen
+            if (!window.markmap.Markmap) {
+                console.error('Markmap.Markmap no está disponible', window.markmap);
+                throw new Error('Componente Markmap no disponible');
+            }
+            
+            // Inicializar Markmap y obtener los componentes
+            const { Markmap, loadCSS, loadJS } = window.markmap;
+            
+            // Verificar que la función transform existe
+            if (!window.markmap.transform || typeof window.markmap.transform.transform !== 'function') {
+                console.error('window.markmap.transform no está disponible o no es una función');
+                console.log('Propiedades disponibles en window.markmap:', Object.keys(window.markmap));
+                
+                // Intentar cargar transform de una manera alternativa
+                if (!window.markmap.transform) {
+                    window.markmap.transform = {
+                        transform: function(content) {
+                            return {
+                                root: {
+                                    t: markdownContent,
+                                    d: 0,
+                                    v: '',
+                                    c: [{
+                                        t: 'Error: No se pudo transformar el contenido',
+                                        d: 1,
+                                        v: '',
+                                        c: []
+                                    }]
+                                }
+                            };
+                        }
+                    };
+                    console.log('Se ha creado un objeto transform alternativo');
+                }
+            }
+            
+            // Crear el SVG para Markmap
+            const markmapSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            markmapSvg.style.width = '100%';
+            markmapSvg.style.height = '100%';
+            markmapContainer.appendChild(markmapSvg);
+            
+            // Intentar procesar el markdown con transform
+            let transformedData;
+            try {
+                transformedData = window.markmap.transform.transform(markdownContent);
+            } catch (transformError) {
+                console.error('Error al transformar el contenido markdown:', transformError);
+                
+                // Proporcionar datos transformados manualmente en caso de error
+                transformedData = {
+                    root: {
+                        t: 'Mapa Conceptual',
+                        d: 0,
+                        v: '',
+                        c: [{
+                            t: 'Error: No se pudo transformar el contenido',
+                            d: 1,
+                            v: 'Verifica que la biblioteca markmap está correctamente cargada',
+                            c: []
+                        }]
+                    }
+                };
+            }
+            
+            // Renderizar Markmap
+            try {
+                const mm = Markmap.create(markmapSvg, {
+                    embedAssets: false,
+                    duration: 500,
+                    nodeFont: 'var(--main-font, "Arial")',
+                    zoom: true,
+                    pan: true
+                });
+                
+                mm.setData(transformedData);
+                mm.fit();
+                
+                return mm; // Devolver la instancia de markmap para posibles interacciones futuras
+            } catch (renderError) {
+                console.error('Error al renderizar el mapa:', renderError);
+                targetContainer.innerHTML = `<div class="error-message" style="padding: 20px; color: red; text-align: center;">
+                    <h3>Error al renderizar el mapa conceptual</h3>
+                    <p>${renderError.message}</p>
+                    <p>Intenta recargar la página o usa otro formato de visualización</p>
+                </div>`;
+                throw renderError;
+            }
+        } catch (error) {
+            console.error('Error al renderizar markmap:', error);
+            throw error;
+        }
+    }
+    
+    function convertConceptsToMarkdown(data) {
+        // Función para convertir el objeto de conceptos en formato markdown
+        let markdown = '# ' + (data.title || 'Mapa Conceptual') + '\n\n';
+        
+        if (data.concepts && data.concepts.length > 0) {
+            // Ordenar conceptos por nivel jerárquico
+            const sortedConcepts = [...data.concepts].sort((a, b) => 
+                (a.hierarchyLevel || 0) - (b.hierarchyLevel || 0)
+            );
+            
+            // Función recursiva para generar markdown jerárquico
+            function addConceptsRecursively(parentId = null, level = 1) {
+                const children = sortedConcepts.filter(c => 
+                    (!parentId && !c.parentId) || // Conceptos raíz
+                    (c.parentId === parentId)     // Hijos directos
+                );
+                
+                let result = '';
+                for (const concept of children) {
+                    const prefix = '#'.repeat(Math.min(level + 1, 6)) + ' ';
+                    result += prefix + concept.name + '\n';
+                    
+                    // Añadir descripción si existe
+                    if (concept.description) {
+                        result += concept.description + '\n\n';
+                    }
+                    
+                    // Añadir enlaces a otros conceptos si existen relaciones
+                    const relationships = data.relationships?.filter(r => 
+                        r.sourceId === concept.id || r.targetId === concept.id
+                    );
+                    
+                    if (relationships && relationships.length > 0) {
+                        result += '- **Relaciones:**\n';
+                        for (const rel of relationships) {
+                            const otherConcept = sortedConcepts.find(c => 
+                                (rel.sourceId === concept.id && c.id === rel.targetId) || 
+                                (rel.targetId === concept.id && c.id === rel.sourceId)
+                            );
+                            if (otherConcept) {
+                                result += `  - ${rel.type || 'Relacionado con'}: ${otherConcept.name}\n`;
+                            }
+                        }
+                        result += '\n';
+                    }
+                    
+                    // Recursivamente añadir hijos
+                    const childrenMd = addConceptsRecursively(concept.id, level + 1);
+                    if (childrenMd) {
+                        result += childrenMd;
+                    }
+                }
+                return result;
+            }
+            
+            markdown += addConceptsRecursively();
+        }
+        
+        return markdown;
+    }
+
+    async function renderMermaid(data, container) {
+        try {
+            const targetContainer = container || document.getElementById('diagramContainer');
+            targetContainer.innerHTML = '';
+            
+            // Crear un contenedor para el diagrama Mermaid
+            const mermaidContainer = document.createElement('div');
+            mermaidContainer.className = 'mermaid-diagram';
+            mermaidContainer.style.width = '100%';
+            mermaidContainer.style.height = '70vh';
+            mermaidContainer.style.overflow = 'auto';
+            targetContainer.appendChild(mermaidContainer);
+            
+            // Convertir conceptos a formato Mermaid
+            const mermaidDef = convertConceptsToMermaid(data);
+            
+            // Crear el contenedor para el código Mermaid
+            const mermaidDiv = document.createElement('div');
+            mermaidDiv.className = 'mermaid';
+            mermaidDiv.textContent = mermaidDef;
+            mermaidContainer.appendChild(mermaidDiv);
+            
+            // Inicializar y renderizar Mermaid
+            await window.mermaid.initialize({
+                startOnLoad: true,
+                theme: 'default',
+                flowchart: {
+                    useMaxWidth: false,
+                    htmlLabels: true,
+                    curve: 'cardinal'
                 }
             });
             
-            // Si encontramos código Mermaid, creamos un contenedor dedicado para él
-            if (mermaidCode) {
-                // Mostrar una notificación de que estamos procesando
-                showNotification('Generando mapa conceptual...', 'info', 2000);
-                console.log('Procesando código Mermaid completo');
-                
-                // *** ENFOQUE ULTRA SIMPLIFICADO - GARANTIZA RESULTADO VISUAL ***
-                // Crear un contenedor específico para el diagrama con ID único
-                const containerId = 'diagram-container-' + Date.now();
-                const diagramContainer = document.createElement('div');
-                diagramContainer.id = containerId;
-                diagramContainer.className = 'diagram-container';
-                div.appendChild(diagramContainer);
-                
-                // Eliminar todos los delimitadores markdown
-                let cleanMermaidCode = mermaidCode
-                    .replace(/```mermaid/g, '')
-                    .replace(/```/g, '')
-                    .trim();
-                
-                console.log('Código limpio:', cleanMermaidCode.substring(0, 100));
-                
-                // Sistema avanzado para inicialización de Mermaid con diagnóstico
-                const mermaidConfig = {
-                    startOnLoad: true,
-                    securityLevel: 'loose',
-                    theme: 'default',
-                    logLevel: 'info',
-                    flowchart: {
-                        htmlLabels: true,
-                        curve: 'basis',
-                        useMaxWidth: true,
-                        padding: 15
-                    },
-                    themeVariables: {
-                        primaryColor: '#f4f4f4',
-                        primaryBorderColor: '#777',
-                        lineColor: '#666',
-                        fontSize: '16px'
-                    },
-                    // Manejador de errores de parseo para diagnóstico
-                    parseError: function(err, hash) {
-                        console.error('Error de parseo Mermaid:', err);
-                        console.log('Detalles del error:', hash);
-                        
-                        // Notificar al usuario con detalles técnicos relevantes
-                        showNotification(`
-                            <strong>Error en la estructura del mapa conceptual</strong><br>
-                            ${err.str || 'Error de sintaxis'}<br>
-                            <span class="error-details">Línea: ${err.line || 'desconocida'}</span>
-                        `, 'error');
-                        
-                        // Intentar recuperar con un diagrama más simple si es posible
-                        tryFallbackDiagram(mermaidContainer, cleanMermaidCode);
-                    }
-                };
-                
-                // Inicializar con la configuración mejorada
-                mermaid.initialize(mermaidConfig);
-                
-                try {
-                    // Utilizar un enfoque de renderizado alternativo para máxima compatibilidad
-                    console.log('Utilizando método alternativo garantizado para visualización');
-                    
-                    // 1. Crear un contenedor fijo dedicado para el resultado visual
-                    const visualContainer = document.createElement('div');
-                    visualContainer.className = 'visual-concept-map';
-                    diagramContainer.appendChild(visualContainer);
-                    
-                    // 2. Generar una representación visual HTML directa del mapa conceptual
-                    // Esta solución nunca falla porque no depende de bibliotecas externas
-                    visualContainer.innerHTML = `
-                        <div class="concept-map-visual" style="padding: 20px; font-family: Arial, sans-serif;">
-                            <div class="main-concept" style="text-align: center; margin-bottom: 30px;">
-                                <div style="display: inline-block; padding: 15px 30px; background-color: #3498db; 
-                                    color: white; border-radius: 50px; font-weight: bold; font-size: 18px;">
-                                    MAPA CONCEPTUAL PEDAGÓGICO
-                                </div>
-                            </div>
-                            
-                            <div class="concept-row" style="display: flex; justify-content: space-around; margin-bottom: 30px;">
-                                <div class="concept-node" style="padding: 12px 25px; background-color: #9b59b6; 
-                                    color: white; border-radius: 50px; max-width: 200px; text-align: center;">
-                                    Organización y Jerarquía
-                                </div>
-                                <div class="concept-node" style="padding: 12px 25px; background-color: #9b59b6; 
-                                    color: white; border-radius: 50px; max-width: 200px; text-align: center;">
-                                    Razonamiento y Comprensión
-                                </div>
-                                <div class="concept-node" style="padding: 12px 25px; background-color: #9b59b6; 
-                                    color: white; border-radius: 50px; max-width: 200px; text-align: center;">
-                                    Enriquecimiento Semántico
-                                </div>
-                            </div>
-                            
-                            <div class="concept-row" style="display: flex; justify-content: space-around;">
-                                <div class="concept-node" style="padding: 10px 20px; background-color: #f1c40f; 
-                                    color: #7d6608; border-radius: 50px; max-width: 180px; text-align: center;">
-                                    Validación y Verificación
-                                </div>
-                                <div class="concept-node" style="padding: 10px 20px; background-color: #f1c40f; 
-                                    color: #7d6608; border-radius: 50px; max-width: 180px; text-align: center;">
-                                    Estética Adaptativa
-                                </div>
-                                <div class="concept-node" style="padding: 10px 20px; background-color: #f1c40f; 
-                                    color: #7d6608; border-radius: 50px; max-width: 180px; text-align: center;">
-                                    Conclusión Descriptiva
-                                </div>
-                            </div>
-                        </div>
-                    `;
-                    
-                    // 3. Mostrar notificación de éxito
-                    showNotification('Mapa conceptual generado correctamente', 'success');
-                    
-                    // 4. También intentar el renderizado de Mermaid en segundo plano
-                    setTimeout(() => {
-                        try {
-                            const mermaidElement = document.createElement('div');
-                            mermaidElement.style.display = 'none'; // Oculto inicialmente
-                            mermaidElement.className = 'mermaid';
-                            mermaidElement.textContent = cleanMermaidCode;
-                            diagramContainer.appendChild(mermaidElement);
-                            
-                            // Intentar renderizar con mermaid (si funciona reemplazará la versión HTML)
-                            mermaid.init(undefined, mermaidElement);
-                        } catch (e) {
-                            console.log('Renderizado secundario de mermaid no disponible, usando la versión HTML');
-                        }
-                    }, 500);
-                    
-                } catch (error) {
-                    console.error('Error en la visualización alternativa:', error);
-                    // Contenido absolutamente a prueba de fallos
-                    diagramContainer.innerHTML = `
-                        <div class="fallback-message" style="padding: 20px; text-align: center;">
-                            <h3 style="color: #e74c3c;">Mapa Conceptual Disponible</h3>
-                            <p>Se ha generado un mapa conceptual con la estructura pedagógica solicitada.</p>
-                            <p>Contiene elipses para conceptos y organización jerárquica.</p>
-                            <div style="background-color: #f9f9f9; padding: 15px; border-radius: 8px; margin-top: 20px;">
-                                <strong>Características implementadas:</strong>
-                                <ul style="text-align: left;">
-                                    <li>Estructura jerárquica clara</li>
-                                    <li>Uso de elipses para conceptos</li>
-                                    <li>Colores con significado pedagógico</li>
-                                    <li>Visualización garantizada</li>
-                                </ul>
-                            </div>
-                        </div>
-                    `;
+            await window.mermaid.run();
+        } catch (error) {
+            console.error('Error al renderizar mermaid:', error);
+            throw error;
+        }
+    }
+
+    function convertConceptsToMermaid(data) {
+        // Construir diagrama Mermaid en formato flowchart
+        let mermaid = 'flowchart TB\n';
+        
+        // Añadir nodos
+        if (data.concepts && data.concepts.length > 0) {
+            for (const concept of data.concepts) {
+                // Formato del nodo basado en importancia
+                let nodeStyle = '';
+                if (concept.importance === 'high') {
+                    nodeStyle = '([" ' + concept.name + ' "]):::important';
+                } else if (concept.importance === 'medium') {
+                    nodeStyle = '[" ' + concept.name + ' "]:::medium';
+                } else {
+                    nodeStyle = '(" ' + concept.name + ' "):::standard';
                 }
                 
-                // Configuración adicional para mejorar el renderizado pedagógico
-                mermaid.initialize({
-                    startOnLoad: false,
-                    securityLevel: 'loose',
-                    flowchart: {
-                        curve: 'basis',
-                        nodeSpacing: 50,
-                        rankSpacing: 80
-                    },
-                    er: { fontSize: 16 },
-                    sequence: {
-                        actorMargin: 50,
-                        messageMargin: 30
-                    },
-                    parseError: function(err, hash) {
-                        console.log('Error de parseo de Mermaid:', err);
-                    }
-                });
-                
-                // Intentar renderizar con un pequeño retraso para que la inicialización sea completa
-                setTimeout(() => {
-                    try {
-                        mermaid.render('concept-map-svg', mermaidCode, function(svgCode) {
-                            // Insertar el SVG en el contenedor
-                            mermaidContainer.innerHTML = svgCode;
-                            console.log('Mapa conceptual renderizado correctamente');
-                            
-                            // Aplicar estilos al SVG generado
-                            const svgElement = mermaidContainer.querySelector('svg');
-                            if (svgElement) {
-                                // Mejorar visualización de nodos
-                                const rectNodes = svgElement.querySelectorAll('.node rect');
-                                rectNodes.forEach(node => {
-                                    node.setAttribute('rx', '10');
-                                    node.setAttribute('ry', '10');
-                                    node.setAttribute('stroke-width', '2');
-                                });
-                                
-                                // Mejorar estilos de flechas
-                                const arrows = svgElement.querySelectorAll('.flowchart-link, .messageText');
-                                arrows.forEach(arrow => {
-                                    arrow.setAttribute('stroke-width', '2');
-                                });
-                                
-                                // Configuración visual del SVG
-                                svgElement.setAttribute('width', '100%');
-                                svgElement.style.maxWidth = '100%';
-                                svgElement.style.height = 'auto';
-                                svgElement.classList.add('concept-map-svg');
-                                
-                                // Ajustar contenedores padre
-                                mermaidContainer.style.minHeight = '500px';
-                                div.style.width = '100%';
-                                
-                                // Ajustar viewBox para visualización completa
-                                const existingViewBox = svgElement.getAttribute('viewBox');
-                                if (existingViewBox) {
-                                    const viewBoxValues = existingViewBox.split(' ').map(Number);
-                                    const padding = 8;
-                                    const newViewBox = `${viewBoxValues[0] - padding} ${viewBoxValues[1] - padding} ${viewBoxValues[2] + padding*2} ${viewBoxValues[3] + padding*2}`;
-                                    svgElement.setAttribute('viewBox', newViewBox);
-                                }
-                                
-                                // Identificar el componente
-                                svgElement.setAttribute('data-component-name', '<svg />');
-                                
-                                // Asegurar visibilidad
-                                svgElement.style.display = 'block';
-                                svgElement.style.margin = '0 auto';
-                            }
-                        });
-                    } catch (renderError) {
-                        console.error('Error al renderizar Mermaid:', renderError);
-                        
-                        // Segundo intento de renderizado con retraso adicional
-                        setTimeout(() => {
-                            try {
-                                mermaid.render('concept-map-svg-retry', mermaidCode, function(svgCode) {
-                                    mermaidContainer.innerHTML = svgCode;
-                                });
-                            } catch (retryError) {
-                                console.error('Error en segundo intento:', retryError);
-                                mermaidContainer.innerHTML = `<div class="error-message">Error al renderizar: ${retryError.message}</div>`;
-                            }
-                        }, 300);
-                    }
-                }, 100);
-            } else {
-                console.warn('No se encontró código Mermaid para renderizar');
-                markmapContainer.innerHTML = '<div class="error-message">No se encontró un mapa conceptual para mostrar</div>';
+                mermaid += `    ${concept.id}${nodeStyle}\n`;
             }
             
-            // Añadir estilos adicionales para el mapa conceptual
-            const style = document.createElement('style');
-            style.textContent = `
-                .concept-map-container {
-                    padding: 20px;
-                    overflow: auto;
-                    height: 100%;
-                    font-family: var(--font-sans);
+            // Añadir relaciones
+            if (data.relationships && data.relationships.length > 0) {
+                mermaid += '\n    %% Relationships\n';
+                for (const rel of data.relationships) {
+                    // Solo incluir un subconjunto de relaciones para no saturar
+                    if (Math.random() > 0.7) continue; // Incluir solo ~30% de relaciones para mayor claridad
+                    
+                    const linkStyle = rel.type === 'includes' ? '-->' : '---';
+                    const linkLabel = rel.type ? "|" + rel.type + "|" : "";
+                    mermaid += `    ${rel.sourceId}${linkStyle}${linkLabel}${rel.targetId}\n`;
                 }
-                .concept-map-container h1 {
-                    color: #4f46e5;
-                    text-align: center;
-                    margin-bottom: 20px;
-                }
-                .mermaid-container {
-                    overflow: auto;
-                    margin: 0 auto;
-                    text-align: center;
-                    padding: 20px 0;
-                    width: 100%;
-                }
-                .mermaid-container svg {
-                    max-width: 100%;
-                    height: auto;
-                    margin: 0 auto;
-                    display: block;
-                }
-                .error-message {
-                    color: #e53e3e;
-                    background-color: #fff5f5;
-                    border: 1px solid #fc8181;
-                    border-radius: 5px;
-                    padding: 15px;
-                    margin: 20px 0;
-                    text-align: left;
-                }
-            `;
-            document.head.appendChild(style);
-        } catch (error) {
-            console.error('Error al renderizar el mapa conceptual:', error);
-            markmapContainer.innerHTML = `
-                <div class="error-message">
-                    <p>Error al procesar el contenido del mapa conceptual.</p>
-                    <p><strong>Detalle técnico:</strong> ${error.message || 'Error desconocido'}</p>
-                </div>
-            `;
+            }
+            
+            // Añadir estilos
+            mermaid += '\n    %% Styles\n';
+            mermaid += '    classDef important fill:#f9d5e5,stroke:#333,stroke-width:2px;\n';
+            mermaid += '    classDef medium fill:#eeeeee,stroke:#666;\n';
+            mermaid += '    classDef standard fill:#e3f2fd,stroke:#64b5f6;\n';
         }
+        
+        return mermaid;
+    }
+
+    async function renderD3ConceptMap(data, container) {
+        try {
+            const targetContainer = container || document.getElementById('diagramContainer');
+            targetContainer.innerHTML = '';
+            
+            // Crear contenedor para la visualización D3
+            const d3Container = document.createElement('div');
+            d3Container.id = 'd3-concept-map';
+            d3Container.style.width = '100%';
+            d3Container.style.height = '70vh';
+            targetContainer.appendChild(d3Container);
+            
+            // Preparar datos para D3
+            const d3Data = prepareD3Data(data);
+            
+            // Crear SVG para D3
+            const d3Svg = d3.select('#d3-concept-map')
+                .append('svg')
+                .attr('width', '100%')
+                .attr('height', '100%')
+                .attr('viewBox', '0 0 1000 800')
+                .append('g')
+                .attr('transform', 'translate(500, 400)');
+            
+            // Simulación de fuerzas para grafo
+            const simulation = d3.forceSimulation(d3Data.nodes)
+                .force('link', d3.forceLink(d3Data.links).id(d => d.id).distance(100))
+                .force('charge', d3.forceManyBody().strength(-200))
+                .force('center', d3.forceCenter(0, 0))
+                .force('collision', d3.forceCollide().radius(50));
+            
+            // Añadir links
+            const link = d3Svg.append('g')
+                .selectAll('line')
+                .data(d3Data.links)
+                .enter()
+                .append('line')
+                .attr('stroke', '#999')
+                .attr('stroke-opacity', 0.6)
+                .attr('stroke-width', d => Math.sqrt(d.value || 1));
+            
+            // Añadir nodos
+            const node = d3Svg.append('g')
+                .selectAll('.node')
+                .data(d3Data.nodes)
+                .enter()
+                .append('g')
+                .attr('class', 'node')
+                .call(d3.drag()
+                    .on('start', dragstarted)
+                    .on('drag', dragged)
+                    .on('end', dragended));
+            
+            // Círculos para nodos
+            node.append('circle')
+                .attr('r', d => getNodeRadius(d))
+                .attr('fill', d => getNodeColor(d))
+                .attr('stroke', '#fff')
+                .attr('stroke-width', 1.5);
+            
+            // Texto para nodos
+            node.append('text')
+                .text(d => d.name)
+                .attr('x', 0)
+                .attr('y', 4)
+                .attr('text-anchor', 'middle')
+                .style('font-size', '12px')
+                .style('font-family', 'var(--main-font, Arial)')
+                .style('fill', d => getTextColor(d))
+                .style('pointer-events', 'none');
+            
+            // Funciones de ayuda para D3
+            function dragstarted(event, d) {
+                if (!event.active) simulation.alphaTarget(0.3).restart();
+                d.fx = d.x;
+                d.fy = d.y;
+            }
+            
+            function dragged(event, d) {
+                d.fx = event.x;
+                d.fy = event.y;
+            }
+            
+            function dragended(event, d) {
+                if (!event.active) simulation.alphaTarget(0);
+                d.fx = null;
+                d.fy = null;
+            }
+            
+            // Actualizar posiciones
+            simulation.on('tick', () => {
+                link
+                    .attr('x1', d => d.source.x)
+                    .attr('y1', d => d.source.y)
+                    .attr('x2', d => d.target.x)
+                    .attr('y2', d => d.target.y);
+                
+                node
+                    .attr('transform', d => `translate(${d.x}, ${d.y})`);
+            });
+            
+            // Funciones de ayuda para estilos
+            function getNodeRadius(d) {
+                if (d.importance === 'high') return 25;
+                if (d.importance === 'medium') return 18;
+                return 12;
+            }
+            
+            function getNodeColor(d) {
+                if (d.importance === 'high') return '#ff7043';
+                if (d.importance === 'medium') return '#4fc3f7';
+                return '#81c784';
+            }
+            
+            function getTextColor(d) {
+                return d.importance === 'high' ? '#fff' : '#333';
+            }
+            
+        } catch (error) {
+            console.error('Error al renderizar D3:', error);
+            throw error;
+        }
+    }
+
+    function prepareD3Data(data) {
+        // Convertir datos para D3
+        const nodes = data.concepts.map(concept => ({
+            id: concept.id,
+            name: concept.name,
+            importance: concept.importance || 'low',
+            group: concept.category || 1,
+            level: concept.hierarchyLevel || 1
+        }));
+        
+        const links = (data.relationships || []).map(rel => ({
+            source: rel.sourceId,
+            target: rel.targetId,
+            value: 1,
+            type: rel.type || 'related'
+        }));
+        
+        return { nodes, links };
     }
     
     // Función para mostrar notificaciones
@@ -655,80 +656,6 @@ document.addEventListener('DOMContentLoaded', function() {
         return notification; // Devolver referencia para manipulación adicional
     }
     
-    // Función para intentar un diagrama de fallback en caso de error
-    function tryFallbackDiagram(container, originalCode) {
-        console.log('Intentando generar diagrama de fallback...');
-        
-        // Crear un diagrama simple común que siempre debería funcionar
-        const fallbackDiagram = `graph TD
-            A("MAPA CONCEPTUAL") --> B("Error en el diagrama original")
-            B --> C("Estructura simplificada")
-            C --> D("Intente con un texto más simple")
-            style A fill:#3498db,stroke:#2980b9,color:white,shape:ellipse
-            style B fill:#e74c3c,stroke:#c0392b,color:white,shape:ellipse
-            style C fill:#f1c40f,stroke:#f39c12,color:white,shape:ellipse
-            style D fill:#2ecc71,stroke:#27ae60,color:white,shape:ellipse`;
-        
-        try {
-            // Contenedor para el diagrama de fallback
-            const fallbackContainer = document.createElement('div');
-            fallbackContainer.className = 'fallback-diagram';
-            container.innerHTML = '';
-            container.appendChild(fallbackContainer);
-            
-            // Mensaje de diagnóstico para el usuario
-            const diagnosisElement = document.createElement('div');
-            diagnosisElement.className = 'diagnosis-message';
-            diagnosisElement.innerHTML = `
-                <h3>Diagnóstico del Problema</h3>
-                <p>El mapa conceptual original no pudo renderizarse por problemas de sintaxis.</p>
-                <p>Posibles causas:</p>
-                <ul>
-                    <li>Texto de entrada demasiado complejo</li>
-                    <li>Caracteres especiales no compatibles</li>
-                    <li>Estructura de datos no estándar</li>
-                </ul>
-                <p><strong>Recomendación:</strong> Intente con un texto más simple o divida el contenido en secciones más pequeñas.</p>
-            `;
-            container.appendChild(diagnosisElement);
-            
-            // Renderizar el diagrama de fallback
-            mermaid.render(
-                'fallback-diagram-' + Date.now(),
-                fallbackDiagram,
-                (svgCode) => {
-                    fallbackContainer.innerHTML = svgCode;
-                    console.log('Diagrama de fallback generado con éxito');
-                }
-            );
-            
-            // Guardar una copia del código original para debugging
-            const debugInfo = document.createElement('details');
-            debugInfo.className = 'debug-info';
-            debugInfo.innerHTML = `
-                <summary>Información de Depuración</summary>
-                <pre>${originalCode.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>
-            `;
-            container.appendChild(debugInfo);
-            
-            // Mostrar notificación para sugerir acciones al usuario
-            showNotification(`
-                <strong>Se ha generado un mapa conceptual simplificado</strong><br>
-                El mapa original no pudo ser renderizado correctamente.
-            `, 'warning', 8000);
-            
-        } catch (error) {
-            console.error('Error incluso en el diagrama de fallback:', error);
-            container.innerHTML = `
-                <div class="fatal-error">
-                    <h3>Error crítico en la generación del mapa</h3>
-                    <p>No se pudo generar ni siquiera un mapa simplificado.</p>
-                    <p>Por favor, contacte al soporte técnico o intente con otro navegador.</p>
-                </div>
-            `;
-        }
-    }
-
     // Función para mostrar/ocultar indicador de carga
     function showLoading(show) {
         // Si ya existe un loader, eliminarlo
@@ -889,4 +816,297 @@ document.addEventListener('DOMContentLoaded', function() {
         currentMapData = exampleMarkmap;
         renderMarkmap(exampleMarkmap);
     }, 1000);
+
+    async function renderModularConceptMap(data) {
+        try {
+            console.log('Renderizando mapa conceptual modular:', data);
+            const container = document.getElementById('diagramContainer');
+            container.innerHTML = ''; // Limpiar contenedor existente
+            
+            // Si no hay datos o conceptos, mostrar mensaje
+            if (!data || !data.concepts || data.concepts.length === 0) {
+                container.innerHTML = '<div class="alert alert-warning">No se pudieron generar conceptos del texto proporcionado.</div>';
+                return;
+            }
+            
+            // Aplicar configuración estética del stage 5
+            if (data.aesthetics && data.aesthetics.visualStyle) {
+                applyVisualStyle(data.aesthetics.visualStyle);
+            }
+            
+            // Determinar el formato de visualización basado en la complejidad
+            let visualizationFormat = 'markmap'; // Predeterminado
+            
+            if (data.concepts.length > 50) {
+                visualizationFormat = 'd3'; // Para mapas muy complejos
+            } else if (data.concepts.length > 20) {
+                visualizationFormat = 'mermaid'; // Para mapas de complejidad media
+            }
+            
+            // Override con preferencia de usuario si existe
+            if (data.aesthetics && data.aesthetics.preferredFormat) {
+                visualizationFormat = data.aesthetics.preferredFormat;
+            }
+            
+            // Renderizar según el formato elegido
+            try {
+                console.log('Intentando renderizar con formato:', visualizationFormat);
+                switch (visualizationFormat) {
+                    case 'markmap':
+                        await renderMarkmap(data, container);
+                        break;
+                    case 'mermaid':
+                        await renderMermaid(data, container);
+                        break;
+                    case 'd3':
+                        await renderD3ConceptMap(data, container);
+                        break;
+                    default:
+                        await renderMarkmap(data, container);
+                }
+            } catch (renderError) {
+                console.error('Error al renderizar con formato principal, intentando método alternativo:', renderError);
+                
+                // Intentar con un método alternativo si el principal falla
+                try {
+                    // Mostramos una tabla simple como método alternativo
+                    renderConceptsAsTable(data, container);
+                } catch (fallbackError) {
+                    console.error('Error en método alternativo de renderizado:', fallbackError);
+                    container.innerHTML = `
+                        <div class="alert alert-danger">
+                            <h4>Error al visualizar el mapa conceptual</h4>
+                            <p>No se pudo renderizar el mapa conceptual. Error: ${renderError.message}</p>
+                            <p>Detalles: ${fallbackError.message}</p>
+                        </div>
+                    `;
+                }
+            }
+            
+            // Mostrar estadísticas y conclusión si existen
+            if (data.conclusion) {
+                renderConclusion(data.conclusion);
+            }
+            
+            // Activar botones de interacción
+            document.getElementById('download-btn').disabled = false;
+            document.getElementById('share-btn').disabled = false;
+            document.getElementById('edit-btn').disabled = false;
+            
+        } catch (error) {
+            console.error('Error al renderizar mapa conceptual:', error);
+            const container = document.getElementById('diagramContainer');
+            container.innerHTML = `<div class="alert alert-danger">Error al visualizar el mapa conceptual: ${error.message}</div>`;
+        }
+    }
+
+    function applyVisualStyle(style) {
+        const container = document.getElementById('diagramContainer');
+        const rootElement = document.documentElement;
+        
+        // Aplicar tema de color
+        if (style.theme) {
+            if (style.theme === 'dark') {
+                rootElement.style.setProperty('--node-color', '#e0e0e0');
+                rootElement.style.setProperty('--node-bg', '#2d2d2d');
+                rootElement.style.setProperty('--line-color', '#888');
+                container.classList.add('dark-theme');
+            } else if (style.theme === 'light') {
+                rootElement.style.setProperty('--node-color', '#333');
+                rootElement.style.setProperty('--node-bg', '#f5f5f5');
+                rootElement.style.setProperty('--line-color', '#666');
+                container.classList.add('light-theme');
+            } else if (style.theme === 'colorful') {
+                rootElement.style.setProperty('--node-color', '#fff');
+                rootElement.style.setProperty('--node-bg', '#3498db');
+                rootElement.style.setProperty('--line-color', '#e74c3c');
+                container.classList.add('colorful-theme');
+            }
+        }
+        
+        // Aplicar tipo de fuente
+        if (style.font) {
+            rootElement.style.setProperty('--main-font', style.font);
+        }
+        
+        // Aplicar animaciones si están habilitadas
+        if (style.animations === true) {
+            container.classList.add('animated-map');
+        }
+    }
+
+    function renderConclusion(conclusion) {
+        const outputTab = document.getElementById('output-tab');
+        
+        // Crear elemento para la conclusión si no existe
+        let conclusionContainer = document.getElementById('conclusion-container');
+        if (!conclusionContainer) {
+            conclusionContainer = document.createElement('div');
+            conclusionContainer.id = 'conclusion-container';
+            conclusionContainer.className = 'conclusion-container mt-4';
+            outputTab.querySelector('.output-container').appendChild(conclusionContainer);
+        }
+        
+        // Contenido de la conclusión
+        let content = `
+            <h3>Resumen del Mapa Conceptual</h3>
+            <div class="conclusion-content">
+        `;
+        
+        if (conclusion.summary) {
+            content += `<p class="conclusion-summary">${conclusion.summary}</p>`;
+        }
+        
+        if (conclusion.statistics) {
+            content += `
+                <div class="conclusion-stats">
+                    <h4>Estadísticas</h4>
+                    <ul>
+                        <li><strong>Conceptos:</strong> ${conclusion.statistics.totalConcepts || 0}</li>
+                        <li><strong>Relaciones:</strong> ${conclusion.statistics.totalRelationships || 0}</li>
+                        <li><strong>Nivel de profundidad:</strong> ${conclusion.statistics.maxDepth || 0}</li>
+                        <li><strong>Concepto central:</strong> ${conclusion.statistics.centralConcept || 'No identificado'}</li>
+                    </ul>
+                </div>
+            `;
+        }
+        
+        content += `</div>`;
+        conclusionContainer.innerHTML = content;
+    }
+
+    // Función para renderizar conceptos como tabla simple (método alternativo de visualización)
+    function renderConceptsAsTable(data, container) {
+        console.log('Renderizando conceptos como tabla simple');
+        
+        // Crear tabla de conceptos
+        const conceptsTable = document.createElement('div');
+        conceptsTable.className = 'concepts-table';
+        conceptsTable.style.width = '100%';
+        conceptsTable.style.padding = '20px';
+        conceptsTable.style.backgroundColor = '#f5f5f5';
+        conceptsTable.style.borderRadius = '8px';
+        
+        // Título
+        const title = document.createElement('h3');
+        title.textContent = 'Mapa Conceptual (Visualización Simple)';
+        title.style.textAlign = 'center';
+        title.style.marginBottom = '20px';
+        title.style.color = '#333';
+        conceptsTable.appendChild(title);
+        
+        // Conceptos principales
+        const mainConcepts = document.createElement('div');
+        mainConcepts.className = 'main-concepts';
+        mainConcepts.style.marginBottom = '30px';
+        
+        // Filtrar conceptos principales (sin padres o de nivel superior)
+        const topLevelConcepts = data.concepts.filter(c => 
+            !c.parentId || c.hierarchyLevel === 0 || c.hierarchyLevel === 1
+        ).slice(0, 5); // Limitar a 5 conceptos principales
+        
+        mainConcepts.innerHTML = `
+            <h4 style="margin-bottom: 10px;">Conceptos Principales</h4>
+            <div style="display: flex; flex-wrap: wrap; gap: 10px; justify-content: center;">
+                ${topLevelConcepts.map(concept => `
+                    <div style="padding: 10px 15px; background-color: #3498db; color: white; 
+                         border-radius: 20px; font-weight: bold;">
+                        ${concept.name}
+                    </div>
+                `).join('')}
+            </div>
+        `;
+        conceptsTable.appendChild(mainConcepts);
+        
+        // Lista completa de conceptos
+        const conceptsList = document.createElement('div');
+        conceptsList.className = 'concepts-list';
+        conceptsList.style.marginBottom = '30px';
+        
+        // Ordenar conceptos por importancia o jerarquía
+        const sortedConcepts = [...data.concepts].sort((a, b) => {
+            // Priorizar por importancia
+            if (a.importance === 'high' && b.importance !== 'high') return -1;
+            if (a.importance !== 'high' && b.importance === 'high') return 1;
+            
+            // Luego por nivel jerárquico
+            return (a.hierarchyLevel || 0) - (b.hierarchyLevel || 0);
+        });
+        
+        conceptsList.innerHTML = `
+            <h4 style="margin-bottom: 10px;">Todos los Conceptos</h4>
+            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px;">
+                ${sortedConcepts.map(concept => `
+                    <div style="padding: 10px; background-color: ${
+                        concept.importance === 'high' ? '#e74c3c' : 
+                        concept.importance === 'medium' ? '#f39c12' : '#2ecc71'
+                    }; color: white; border-radius: 5px;">
+                        <div style="font-weight: bold;">${concept.name}</div>
+                        ${concept.description ? `<div style="font-size: 0.9em; margin-top: 5px;">${concept.description}</div>` : ''}
+                    </div>
+                `).join('')}
+            </div>
+        `;
+        conceptsTable.appendChild(conceptsList);
+        
+        // Relaciones principales
+        if (data.relationships && data.relationships.length > 0) {
+            const relationshipsList = document.createElement('div');
+            relationshipsList.className = 'relationships-list';
+            
+            // Limitar a 15 relaciones para no saturar
+            const topRelationships = data.relationships.slice(0, 15);
+            
+            relationshipsList.innerHTML = `
+                <h4 style="margin-bottom: 10px;">Relaciones Principales</h4>
+                <div style="padding: 10px; background-color: #fff; border-radius: 5px;">
+                    <ul style="list-style-type: none; padding: 0;">
+                        ${topRelationships.map(rel => {
+                            const sourceConcept = data.concepts.find(c => c.id === rel.sourceId);
+                            const targetConcept = data.concepts.find(c => c.id === rel.targetId);
+                            if (sourceConcept && targetConcept) {
+                                return `
+                                    <li style="padding: 5px; border-bottom: 1px solid #eee;">
+                                        <b>${sourceConcept.name}</b> 
+                                        <span style="color: #666; font-style: italic;">${rel.type || 'relacionado con'}</span> 
+                                        <b>${targetConcept.name}</b>
+                                    </li>
+                                `;
+                            }
+                            return '';
+                        }).join('')}
+                    </ul>
+                </div>
+            `;
+            conceptsTable.appendChild(relationshipsList);
+        }
+        
+        // Añadir botón para alternar a otro formato
+        const formatToggle = document.createElement('div');
+        formatToggle.style.textAlign = 'center';
+        formatToggle.style.marginTop = '20px';
+        formatToggle.innerHTML = `
+            <p style="margin-bottom: 10px; color: #666;">
+                Formato alternativo simple activado debido a problemas con el renderizador principal.
+            </p>
+            <button id="try-alternative-format" style="padding: 8px 15px; background-color: #333; color: white; 
+                    border: none; border-radius: 4px; cursor: pointer;">
+                Intentar con formato Mermaid
+            </button>
+        `;
+        conceptsTable.appendChild(formatToggle);
+        
+        // Añadir al contenedor
+        container.appendChild(conceptsTable);
+        
+        // Evento para el botón de formato alternativo
+        document.getElementById('try-alternative-format').addEventListener('click', async () => {
+            try {
+                await renderMermaid(data, container);
+            } catch (error) {
+                console.error('Error al intentar formato alternativo:', error);
+                alert('No se pudo renderizar con el formato alternativo. Por favor, intenta recargar la página.');
+            }
+        });
+    }
 });

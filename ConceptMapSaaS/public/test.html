@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test API Mapas Conceptuales</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        button {
+            padding: 10px 15px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 10px 0;
+        }
+        pre {
+            background-color: #f5f5f5;
+            padding: 15px;
+            border-radius: 4px;
+            overflow: auto;
+        }
+        .result {
+            margin-top: 20px;
+            border: 1px solid #ddd;
+            padding: 15px;
+            border-radius: 4px;
+        }
+        .status {
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        .success {
+            color: green;
+        }
+        .error {
+            color: red;
+        }
+    </style>
+</head>
+<body>
+    <h1>Test API Mapas Conceptuales</h1>
+    
+    <div>
+        <h2>Texto de Prueba</h2>
+        <textarea id="testText" rows="6" cols="80" style="width: 100%;">La inteligencia artificial (IA) es un campo de la informática que se centra en la creación de máquinas inteligentes capaces de realizar tareas que típicamente requieren inteligencia humana. La IA abarca desde sistemas simples de reglas hasta complejos modelos de aprendizaje profundo.</textarea>
+    </div>
+    
+    <div>
+        <button id="testApi">Probar API /api/generate-map</button>
+        <button id="testModularApi">Probar API /api/generate-map-modular</button>
+    </div>
+    
+    <div class="result" id="result">
+        <div class="status">Resultados aparecerán aquí</div>
+        <pre id="resultContent"></pre>
+    </div>
+    
+    <script>
+        document.getElementById('testApi').addEventListener('click', async () => {
+            const text = document.getElementById('testText').value;
+            const statusDiv = document.querySelector('#result .status');
+            const resultContent = document.getElementById('resultContent');
+            
+            statusDiv.textContent = 'Enviando solicitud...';
+            statusDiv.className = '';
+            
+            try {
+                const response = await fetch('/api/generate-map', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        text,
+                        options: {
+                            stages: {
+                                organization: true,
+                                reasoning: true,
+                                enrichment: true,
+                                validation: true,
+                                aesthetics: true
+                            },
+                            visualStyle: 'professional',
+                            complexity: 3
+                        }
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    statusDiv.textContent = '✅ API respondió correctamente';
+                    statusDiv.className = 'success';
+                    
+                    // Mostrar datos de respuesta
+                    let resultText = `Success: ${data.success}\n`;
+                    
+                    if (data.result && data.result.content) {
+                        resultText += `\nContent Length: ${data.result.content.length}\n`;
+                        resultText += `\nFirst 100 chars: ${data.result.content.substring(0, 100)}\n`;
+                    } else {
+                        resultText += `\nNo content in response\n`;
+                    }
+                    
+                    resultContent.textContent = JSON.stringify(data, null, 2);
+                } else {
+                    statusDiv.textContent = '❌ Error en la respuesta';
+                    statusDiv.className = 'error';
+                    resultContent.textContent = JSON.stringify(data, null, 2);
+                }
+            } catch (error) {
+                statusDiv.textContent = '❌ Error: ' + error.message;
+                statusDiv.className = 'error';
+                resultContent.textContent = error.stack;
+            }
+        });
+        
+        document.getElementById('testModularApi').addEventListener('click', async () => {
+            const text = document.getElementById('testText').value;
+            const statusDiv = document.querySelector('#result .status');
+            const resultContent = document.getElementById('resultContent');
+            
+            statusDiv.textContent = 'Enviando solicitud a API modular...';
+            statusDiv.className = '';
+            
+            try {
+                const response = await fetch('/api/generate-map-modular', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        text,
+                        language: 'es',
+                        options: {
+                            maxConcepts: 15
+                        }
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    statusDiv.textContent = '✅ API modular respondió correctamente';
+                    statusDiv.className = 'success';
+                    resultContent.textContent = JSON.stringify(data, null, 2);
+                } else {
+                    statusDiv.textContent = '❌ Error en la respuesta de API modular';
+                    statusDiv.className = 'error';
+                    resultContent.textContent = JSON.stringify(data, null, 2);
+                }
+            } catch (error) {
+                statusDiv.textContent = '❌ Error: ' + error.message;
+                statusDiv.className = 'error';
+                resultContent.textContent = error.stack;
+            }
+        });
+    </script>
+</body>
+</html> 

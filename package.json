@@ -1,0 +1,14 @@
+{
+  "name": "concept-map-root",
+  "version": "1.0.0",
+  "description": "Root package for concept map generation system",
+  "scripts": {
+    "start": "cd ConceptMapSaaS && npm start",
+    "dev": "cd ConceptMapSaaS && npm run dev",
+    "build": "cd ConceptMapSaaS && npm run build",
+    "test": "cd ConceptMapSaaS && npm test",
+    "install-deps": "cd ConceptMapSaaS && npm install"
+  },
+  "author": "",
+  "license": "ISC"
+} 
