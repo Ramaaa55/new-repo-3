@@ -4,6 +4,7 @@
  */
 
 const BaseModule = require('../BaseModule');
+const { performance } = require('perf_hooks');
 
 class EnrichmentModule extends BaseModule {
   /**
@@ -13,13 +14,50 @@ class EnrichmentModule extends BaseModule {
   constructor(options = {}) {
     super('enrichment', options);
     
+    // Configuración específica de las fuentes de enriquecimiento
+    this.sourcePriority = options.sourcePriority || [
+      'conceptNet', 
+      'wikidataToolkit', 
+      'semanticScholar', 
+      'semanticKernel'
+    ];
+    
+    // Límites para controlar el enriquecimiento
+    this.enrichmentLimits = {
+      maxPropertiesPerConcept: options.maxPropertiesPerConcept || 5,
+      maxExamplesPerConcept: options.maxExamplesPerConcept || 3,
+      maxRelatedConceptsToAdd: options.maxRelatedConceptsToAdd || 10,
+      minImportanceForEnrichment: options.minImportanceForEnrichment || 0.3
+    };
+    
     // Cargar servicios necesarios para esta etapa
     try {
       this.conceptMapService = require('../../services/fixed-conceptMapService');
       this.aiSdkService = require('../../services/aiSdkService');
+      
+      // Intentar cargar servicios adicionales si están disponibles
+      try {
+        this.wikidataService = require('../../services/wikidataService');
+      } catch (e) {
+        console.info('Servicio de Wikidata no disponible, se usará simulación');
+      }
+      
+      try {
+        this.semanticScholarService = require('../../services/semanticScholarService');
+      } catch (e) {
+        console.info('Servicio de Semantic Scholar no disponible, se usará simulación');
+      }
+      
+      try {
+        this.conceptNetService = require('../../services/conceptNetService');
+      } catch (e) {
+        console.info('Servicio de ConceptNet no disponible, se usará simulación');
+      }
     } catch (error) {
-      console.error('Error al cargar servicios para EnrichmentModule:', error);
+      console.error(`Error al cargar servicios para EnrichmentModule: ${error.message}`);
     }
+    
+    this.cache = new Map(); // Cache simple para resultados de enriquecimiento
   }
   
   /**
@@ -46,380 +84,711 @@ class EnrichmentModule extends BaseModule {
    * @returns {Promise<Object>} - Resultado del procesamiento
    */
   async _processImplementation(input, context) {
-    console.log('ETAPA 3: Enriquecimiento Semántico');
+    console.log('ETAPA 3: Enriquecimiento Semántico - Iniciando');
+    const startTime = performance.now();
     
     // Extraer información relevante
-    const text = input.original.text;
+    const text = input.text || (input.original && input.original.text);
+    
+    if (!text) {
+      console.warn('No se encontró texto para procesar en el enriquecimiento');
+      return input; // Continuar sin enriquecimiento
+    }
+    
     const concepts = [...input.concepts]; // Copia para no modificar el original directamente
     const relationships = [...input.relationships];
-    const language = input.original.language || 'es';
+    const language = (input.original && input.original.language) || input.language || 'es';
     
-    // 1. Enriquecimiento con Semantic Kernel si está habilitado
-    if (this.isToolEnabled('semanticKernel')) {
-      try {
-        console.log('Aplicando enriquecimiento con Semantic Kernel');
-        await this._enrichWithSemanticKernel(concepts, {
-          text,
-          language,
-          relationships
-        });
-      } catch (error) {
-        console.warn('Error en enriquecimiento con Semantic Kernel:', error.message);
-        // No es crítico si falla
-      }
-    }
+    // Estadísticas de enriquecimiento
+    const enrichmentStats = {
+      startTime,
+      sourceSuccess: {},
+      conceptsProcessed: concepts.length,
+      propertiesAdded: 0,
+      definitionsAdded: 0,
+      examplesAdded: 0,
+      newConceptsAdded: 0,
+      newRelationshipsAdded: 0,
+      sourceTiming: {}
+    };
     
-    // 2. Enriquecimiento con Semantic Scholar si está habilitado
-    if (this.isToolEnabled('semanticScholar')) {
-      try {
-        console.log('Aplicando enriquecimiento con Semantic Scholar');
-        await this._enrichWithSemanticScholar(concepts, language);
-      } catch (error) {
-        console.warn('Error en enriquecimiento con Semantic Scholar:', error.message);
-        // No es crítico si falla
-      }
-    }
+    // Priorizar conceptos para enriquecimiento
+    const prioritizedConcepts = this._prioritizeConceptsForEnrichment(concepts);
     
-    // 3. Enriquecimiento con Wikidata si está habilitado
-    if (this.isToolEnabled('wikidataToolkit')) {
-      try {
-        console.log('Aplicando enriquecimiento con Wikidata');
-        await this._enrichWithWikidata(concepts, language);
-      } catch (error) {
-        console.warn('Error en enriquecimiento con Wikidata:', error.message);
-        // No es crítico si falla
-      }
-    }
+    // Determinar herramientas disponibles
+    const availableTools = this._getAvailableEnrichmentTools();
     
-    // 4. Enriquecimiento con ConceptNet si está habilitado
-    if (this.isToolEnabled('conceptNet')) {
-      try {
-        console.log('Aplicando enriquecimiento con ConceptNet');
-        const enrichedData = await this._enrichWithConceptNet(concepts, relationships, language);
-        
-        // Actualizar con posibles nuevos conceptos o relaciones
-        if (enrichedData.newConcepts && enrichedData.newConcepts.length > 0) {
-          enrichedData.newConcepts.forEach(newConcept => {
-            if (!concepts.some(c => c.name.toLowerCase() === newConcept.name.toLowerCase())) {
-              concepts.push(newConcept);
-            }
-          });
-        }
-        
-        if (enrichedData.newRelationships && enrichedData.newRelationships.length > 0) {
-          enrichedData.newRelationships.forEach(newRel => {
-            if (!relationships.some(r => 
-              r.source === newRel.source && r.target === newRel.target
-            )) {
-              relationships.push(newRel);
-            }
-          });
-        }
-      } catch (error) {
-        console.warn('Error en enriquecimiento con ConceptNet:', error.message);
-        // No es crítico si falla
-      }
-    }
+    // 1. Procesar enriquecimiento en paralelo para los conceptos prioritarios
+    await this._processParallelEnrichment(
+      prioritizedConcepts, 
+      relationships, 
+      language,
+      text,
+      availableTools,
+      enrichmentStats
+    );
     
-    // 5. Enriquecimiento adicional con AI SDK (definiciones)
-    try {
-      console.log('Aplicando enriquecimiento con definiciones via AI SDK');
-      
-      // Determinar si es necesario añadir definiciones
-      const needsDefinitions = concepts.some(c => !c.definition || c.definition.length < 20);
-      
-      if (needsDefinitions && this.aiSdkService) {
-        await this.aiSdkService.enrichWithDefinitions(concepts, { language });
-      }
-    } catch (error) {
-      console.warn('Error en enriquecimiento con AI SDK:', error.message);
-      // No es crítico si falla
-    }
+    // 2. Unificar y deduplicar resultados
+    const { 
+      mergedConcepts, 
+      mergedRelationships,
+      newConceptsCount,
+      newRelationshipsCount
+    } = this._mergeResults(concepts, relationships, enrichmentStats);
+    
+    // 3. Validar la coherencia de los conceptos y relaciones enriquecidos
+    const validationResult = this._validateEnrichmentCoherence(
+      mergedConcepts, 
+      mergedRelationships, 
+      language
+    );
+    
+    // Completar las estadísticas
+    enrichmentStats.endTime = performance.now();
+    enrichmentStats.durationMs = enrichmentStats.endTime - startTime;
+    enrichmentStats.newConceptsAdded = newConceptsCount;
+    enrichmentStats.newRelationshipsAdded = newRelationshipsCount;
+    enrichmentStats.coherenceScore = validationResult.coherenceScore;
     
     // Actualizar el resultado con los datos enriquecidos
-    input.concepts = concepts;
-    input.relationships = relationships;
+    input.concepts = mergedConcepts;
+    input.relationships = mergedRelationships;
     
     // Añadir metadatos específicos de esta etapa
+    if (!input.metadata) input.metadata = {};
     if (!input.metadata.stageResults) input.metadata.stageResults = {};
+    
     input.metadata.stageResults.enrichment = {
-      enrichedConceptCount: concepts.length,
-      newRelationshipCount: relationships.length - input.relationships.length,
-      tools: {
-        semanticKernel: this.isToolEnabled('semanticKernel'),
-        semanticScholar: this.isToolEnabled('semanticScholar'),
-        wikidataToolkit: this.isToolEnabled('wikidataToolkit'),
-        conceptNet: this.isToolEnabled('conceptNet')
-      }
+      stats: enrichmentStats,
+      validationResult,
+      tools: availableTools
     };
+    
+    console.log(`ETAPA 3: Enriquecimiento Semántico - Completado en ${enrichmentStats.durationMs.toFixed(2)}ms`);
+    console.log(`Conceptos procesados: ${enrichmentStats.conceptsProcessed}, Nuevos conceptos: ${newConceptsCount}, Nuevas relaciones: ${newRelationshipsCount}`);
     
     return input;
   }
   
-  // Implementación de métodos de enriquecimiento (simplificados para este ejemplo)
+  /**
+   * Determina qué herramientas de enriquecimiento están disponibles
+   * @returns {Object} - Estado de disponibilidad de cada herramienta
+   * @private
+   */
+  _getAvailableEnrichmentTools() {
+    return {
+      semanticKernel: this.isToolEnabled('semanticKernel'),
+      semanticScholar: this.isToolEnabled('semanticScholar') && !!this.semanticScholarService,
+      wikidataToolkit: this.isToolEnabled('wikidataToolkit') && !!this.wikidataService,
+      conceptNet: this.isToolEnabled('conceptNet') && !!this.conceptNetService,
+      aiSdk: !!this.aiSdkService
+    };
+  }
+  
+  /**
+   * Procesa el enriquecimiento en paralelo para los conceptos
+   * @param {Array} concepts - Conceptos priorizados para enriquecer
+   * @param {Array} relationships - Relaciones existentes
+   * @param {string} language - Idioma del texto
+   * @param {string} text - Texto original
+   * @param {Object} tools - Herramientas disponibles
+   * @param {Object} stats - Estadísticas
+   * @returns {Promise<void>}
+   * @private
+   */
+  async _processParallelEnrichment(concepts, relationships, language, text, tools, stats) {
+    // Agrupar conceptos por importancia para procesamiento por lotes
+    const highImportanceConcepts = concepts.filter(c => c.importance >= 0.7);
+    const mediumImportanceConcepts = concepts.filter(c => c.importance >= 0.4 && c.importance < 0.7);
+    const lowImportanceConcepts = concepts.filter(c => c.importance < 0.4);
+    
+    // Procesamiento por lotes con limitación de concurrencia
+    await this._processConceptBatch(highImportanceConcepts, relationships, language, text, tools, stats, true);
+    await this._processConceptBatch(mediumImportanceConcepts, relationships, language, text, tools, stats, false);
+    
+    // Los conceptos de baja importancia se procesan con enriquecimiento mínimo
+    if (lowImportanceConcepts.length > 0) {
+      await this._processMinimalEnrichment(lowImportanceConcepts, language, tools, stats);
+    }
+  }
+  
+  /**
+   * Procesa un lote de conceptos con las fuentes disponibles
+   * @param {Array} concepts - Lote de conceptos para enriquecer
+   * @param {Array} relationships - Relaciones existentes
+   * @param {string} language - Idioma del texto
+   * @param {string} text - Texto original
+   * @param {Object} tools - Herramientas disponibles
+   * @param {Object} stats - Estadísticas
+   * @param {boolean} fullEnrichment - Si se debe realizar enriquecimiento completo
+   * @returns {Promise<void>}
+   * @private
+   */
+  async _processConceptBatch(concepts, relationships, language, text, tools, stats, fullEnrichment) {
+    if (concepts.length === 0) return;
+    
+    // Determinar qué fuentes usar según prioridad
+    const sourcesToUse = this.sourcePriority.filter(source => 
+      tools[source] && (fullEnrichment || ['conceptNet', 'wikidataToolkit'].includes(source))
+    );
+    
+    const results = await Promise.allSettled(
+      concepts.map(concept => this._enrichConcept(
+        concept, 
+        sourcesToUse, 
+        { language, text, relationships, fullEnrichment },
+        stats
+      ))
+    );
+    
+    // Procesar resultados
+    results.forEach((result, index) => {
+      if (result.status === 'fulfilled') {
+        Object.assign(concepts[index], result.value);
+      } else {
+        console.warn(`Error al enriquecer concepto '${concepts[index].name}': ${result.reason}`);
+      }
+    });
+  }
+  
+  /**
+   * Enriquece un concepto con las fuentes disponibles
+   * @param {Object} concept - Concepto a enriquecer
+   * @param {Array} sources - Fuentes a utilizar
+   * @param {Object} context - Contexto de ejecución
+   * @param {Object} stats - Estadísticas
+   * @returns {Promise<Object>} - Concepto enriquecido
+   * @private
+   */
+  async _enrichConcept(concept, sources, context, stats) {
+    const { language, text, relationships, fullEnrichment } = context;
+    const enrichedConcept = { ...concept };
+    
+    // Inicializar propiedades de enriquecimiento si no existen
+    if (!enrichedConcept.properties) enrichedConcept.properties = [];
+    if (!enrichedConcept.examples) enrichedConcept.examples = [];
+    if (!enrichedConcept.domains) enrichedConcept.domains = [];
+    if (!enrichedConcept.academicReferences) enrichedConcept.academicReferences = [];
+    if (!enrichedConcept.relatedConcepts) enrichedConcept.relatedConcepts = [];
+    
+    // Verificar si ya tenemos este concepto en caché
+    const cacheKey = `${enrichedConcept.name}_${language}`;
+    if (this.cache.has(cacheKey)) {
+      const cachedData = this.cache.get(cacheKey);
+      return {
+        ...enrichedConcept,
+        ...cachedData,
+        cacheHit: true
+      };
+    }
+    
+    // Profundizar la descripción si está disponible el texto original
+    if (text && (!enrichedConcept.description || enrichedConcept.description.length < 50)) {
+      try {
+        enrichedConcept.description = await this._generateRichDescription(enrichedConcept.name, text, language);
+      } catch (e) {
+        console.warn(`No se pudo generar descripción rica para ${enrichedConcept.name}`);
+      }
+    }
+    
+    // Enriquecer con cada fuente disponible
+    for (const source of sources) {
+      const startTime = performance.now();
+      try {
+        // Ejecutar enriquecimiento según la fuente
+        switch (source) {
+          case 'semanticKernel':
+            if (fullEnrichment) {
+              const semanticData = await this._enrichWithSemanticKernel(enrichedConcept, {
+                text,
+                language,
+                shouldGenerateExamples: true,
+                shouldGenerateProperties: true
+              });
+              Object.assign(enrichedConcept, semanticData);
+            }
+            break;
+          
+          case 'semanticScholar':
+            if (this._detectIfConceptIsAcademic(enrichedConcept)) {
+              const scholarData = await this._enrichWithSemanticScholar(enrichedConcept, language);
+              
+              // Añadir referencias académicas y dominios
+              if (scholarData.academicReferences) {
+                enrichedConcept.academicReferences = [
+                  ...enrichedConcept.academicReferences,
+                  ...scholarData.academicReferences.slice(0, this.enrichmentLimits.maxPropertiesPerConcept)
+                ];
+              }
+              
+              if (scholarData.domains) {
+                enrichedConcept.domains = [
+                  ...enrichedConcept.domains,
+                  ...scholarData.domains.filter(d => !enrichedConcept.domains.includes(d))
+                ];
+              }
+            }
+            break;
+          
+          case 'wikidataToolkit':
+            const wikidataData = await this._enrichWithWikidata(enrichedConcept, language);
+            
+            // Integrar datos de Wikidata
+            if (wikidataData.definition && wikidataData.definition.length > 20 && 
+                (!enrichedConcept.definition || wikidataData.definition.length > enrichedConcept.definition.length)) {
+              enrichedConcept.definition = wikidataData.definition;
+            }
+            
+            if (wikidataData.properties) {
+              enrichedConcept.properties = [
+                ...enrichedConcept.properties,
+                ...wikidataData.properties.filter(p => 
+                  !enrichedConcept.properties.some(ep => 
+                    ep.name === p.name || ep.value === p.value
+                  )
+                ).slice(0, this.enrichmentLimits.maxPropertiesPerConcept)
+              ];
+            }
+            
+            // Añadir categorías de Wikidata
+            if (wikidataData.categories) {
+              if (!enrichedConcept.categories) {
+                enrichedConcept.categories = [];
+              }
+              enrichedConcept.categories = [
+                ...enrichedConcept.categories,
+                ...wikidataData.categories.filter(c => !enrichedConcept.categories.includes(c))
+              ];
+            }
+            break;
+          
+          case 'conceptNet':
+            const conceptNetData = await this._enrichWithConceptNet(enrichedConcept, relationships, language);
+            
+            // Integrar datos de ConceptNet
+            if (conceptNetData.relatedConcepts) {
+              enrichedConcept.relatedConcepts = [
+                ...enrichedConcept.relatedConcepts,
+                ...conceptNetData.relatedConcepts.filter(rc => 
+                  !enrichedConcept.relatedConcepts.some(erc => erc.name === rc.name)
+                ).slice(0, this.enrichmentLimits.maxRelatedConceptsToAdd)
+              ];
+            }
+            
+            if (conceptNetData.newRelationships) {
+              enrichedConcept.newRelationships = [
+                ...(enrichedConcept.newRelationships || []),
+                ...conceptNetData.newRelationships
+              ];
+            }
+            break;
+        }
+        
+        // Registrar éxito de la fuente
+        if (!stats.sourceSuccess[source]) stats.sourceSuccess[source] = 0;
+        stats.sourceSuccess[source]++;
+        
+        // Medir tiempo
+        const endTime = performance.now();
+        if (!stats.sourceTiming[source]) stats.sourceTiming[source] = 0;
+        stats.sourceTiming[source] += (endTime - startTime);
+        
+      } catch (error) {
+        console.warn(`Error al enriquecer concepto '${enrichedConcept.name}' con la fuente ${source}: ${error.message}`);
+      }
+    }
+    
+    // Generar ejemplos contextuales si no se tienen suficientes
+    if (enrichedConcept.examples.length < 2 && text) {
+      try {
+        const contextualExamples = this._generateExamples(enrichedConcept.name, text);
+        enrichedConcept.examples = Array.from(new Set([
+          ...enrichedConcept.examples,
+          ...contextualExamples
+        ])).slice(0, this.enrichmentLimits.maxExamplesPerConcept);
+      } catch (e) {
+        // Fallar silenciosamente, no es crítico
+      }
+    }
+    
+    // Generar propiedades si no se tienen suficientes
+    if (enrichedConcept.properties.length < 2) {
+      try {
+        const generatedProperties = this._generateProperties(enrichedConcept.name);
+        enrichedConcept.properties = [
+          ...enrichedConcept.properties,
+          ...generatedProperties.filter(p => 
+            !enrichedConcept.properties.some(ep => 
+              ep.name === p.name || ep.value === p.value
+            )
+          )
+        ].slice(0, this.enrichmentLimits.maxPropertiesPerConcept);
+      } catch (e) {
+        // Fallar silenciosamente, no es crítico
+      }
+    }
+    
+    // Determinar la categoría principal y subcategorías
+    this._determineConceptCategories(enrichedConcept, text);
+    
+    // Guardar en caché para futuras consultas
+    this.cache.set(cacheKey, {
+      definition: enrichedConcept.definition,
+      properties: enrichedConcept.properties,
+      examples: enrichedConcept.examples,
+      domains: enrichedConcept.domains,
+      academicReferences: enrichedConcept.academicReferences,
+      relatedConcepts: enrichedConcept.relatedConcepts,
+      categories: enrichedConcept.categories,
+      mainCategory: enrichedConcept.mainCategory,
+      subcategories: enrichedConcept.subcategories
+    });
+    
+    return enrichedConcept;
+  }
+  
+  /**
+   * Genera una descripción rica y detallada del concepto
+   * @param {string} conceptName - Nombre del concepto
+   * @param {string} text - Texto original
+   * @param {string} language - Idioma
+   * @returns {Promise<string>} - Descripción enriquecida
+   * @private
+   */
+  async _generateRichDescription(conceptName, text, language) {
+    try {
+      // Buscar fragmentos en el texto original que mencionan el concepto
+      const sentences = text.split(/[.!?]+/);
+      const relevantSentences = sentences
+        .filter(s => s.toLowerCase().includes(conceptName.toLowerCase()))
+        .map(s => s.trim())
+        .filter(s => s.length > 0);
+      
+      if (relevantSentences.length > 0) {
+        // Combinar las oraciones más relevantes
+        if (relevantSentences.length >= 2) {
+          return relevantSentences.slice(0, 2).join('. ') + '.';
+        } else {
+          return relevantSentences[0] + '.';
+        }
+      }
+      
+      // Si no hay oraciones relevantes, usar AI para generar una descripción
+      if (this.aiSdkService) {
+        const prompt = `Define el concepto "${conceptName}" en español, en un párrafo breve pero informativo. No más de 2 frases.`;
+        const generatedDescription = await this.aiSdkService.generateText(prompt, {
+          max_tokens: 100,
+          temperature: 0.3
+        });
+        
+        return generatedDescription || `Concepto relacionado con ${conceptName}`;
+      }
+    } catch (error) {
+      console.warn(`Error generando descripción rica para ${conceptName}: ${error.message}`);
+    }
+    
+    return `Concepto relacionado con ${conceptName}`;
+  }
+  
+  /**
+   * Determina y clasifica las categorías de un concepto
+   * @param {Object} concept - Concepto a categorizar
+   * @param {string} text - Texto original
+   * @private
+   */
+  _determineConceptCategories(concept, text) {
+    // Si ya tiene una categoría principal, mantenerla
+    if (concept.mainCategory) return;
+    
+    // Categorías principales potenciales
+    const mainCategories = [
+      'proceso', 'objeto', 'persona', 'lugar', 'evento', 
+      'concepto', 'teoría', 'método', 'sistema', 'herramienta'
+    ];
+    
+    // Palabras clave asociadas a categorías
+    const categoryKeywords = {
+      proceso: ['proceso', 'procedimiento', 'flujo', 'ciclo', 'fase', 'etapa'],
+      objeto: ['objeto', 'elemento', 'dispositivo', 'artefacto', 'herramienta'],
+      persona: ['persona', 'individuo', 'profesional', 'especialista', 'actor'],
+      lugar: ['lugar', 'ubicación', 'sitio', 'zona', 'área', 'región'],
+      evento: ['evento', 'acontecimiento', 'suceso', 'ocurrencia', 'incidente'],
+      concepto: ['concepto', 'idea', 'noción', 'constructo', 'abstracción'],
+      teoría: ['teoría', 'modelo', 'paradigma', 'principio', 'postulado'],
+      método: ['método', 'técnica', 'enfoque', 'aproximación', 'estrategia'],
+      sistema: ['sistema', 'estructura', 'organización', 'conjunto', 'composición'],
+      herramienta: ['herramienta', 'instrumento', 'utensilio', 'aparato', 'mecanismo']
+    };
+    
+    // Determinar categoría por el contexto
+    let mainCategory = null;
+    let highestScore = 0;
+    
+    // 1. Usar la descripción si está disponible
+    const contextText = concept.description || '';
+    
+    // 2. Buscar coincidencias de palabras clave en descripción y propiedades
+    for (const [category, keywords] of Object.entries(categoryKeywords)) {
+      let score = 0;
+      
+      // Puntuar coincidencias en descripción
+      for (const keyword of keywords) {
+        if (contextText.toLowerCase().includes(keyword)) {
+          score += 2;
+        }
+      }
+      
+      // Puntuar por propiedades
+      const propertyTexts = (concept.properties || [])
+        .map(p => `${p.name} ${p.value}`)
+        .join(' ').toLowerCase();
+      
+      for (const keyword of keywords) {
+        if (propertyTexts.includes(keyword)) {
+          score += 1;
+        }
+      }
+      
+      // Verificar si hay frases definitorias en el texto original
+      if (text) {
+        const definitionPatterns = [
+          `${concept.name} es un ${category}`,
+          `${concept.name} es una ${category}`,
+          `${concept.name}, un ${category}`,
+          `${concept.name}, una ${category}`
+        ];
+        
+        for (const pattern of definitionPatterns) {
+          if (text.toLowerCase().includes(pattern.toLowerCase())) {
+            score += 5; // Alto peso para definiciones explícitas
+          }
+        }
+      }
+      
+      if (score > highestScore) {
+        highestScore = score;
+        mainCategory = category;
+      }
+    }
+    
+    // Si no se encontró una categoría, usar la categoría por defecto o existente
+    concept.mainCategory = mainCategory || concept.category || 'concepto';
+    
+    // Determinar subcategorías basadas en propiedades y dominios
+    if (!concept.subcategories) {
+      concept.subcategories = [];
+    }
+    
+    // Añadir dominios como subcategorías si existen
+    if (concept.domains && concept.domains.length > 0) {
+      concept.subcategories = [
+        ...concept.subcategories,
+        ...concept.domains.filter(d => !concept.subcategories.includes(d))
+      ];
+    }
+    
+    // Extraer subcategorías de propiedades si son relevantes
+    const potentialSubcategories = (concept.properties || [])
+      .filter(p => p.name === 'tipo' || p.name === 'categoría' || p.name === 'clasificación')
+      .map(p => p.value);
+    
+    if (potentialSubcategories.length > 0) {
+      concept.subcategories = [
+        ...concept.subcategories,
+        ...potentialSubcategories.filter(s => !concept.subcategories.includes(s))
+      ];
+    }
+  }
   
   /**
    * Enriquece conceptos utilizando Semantic Kernel
-   * @param {Array} concepts - Conceptos a enriquecer
+   * @param {Object} concept - Concepto a enriquecer
    * @param {Object} context - Contexto para el enriquecimiento
    * @returns {Promise<void>}
    * @private
    */
-  async _enrichWithSemanticKernel(concepts, context) {
-    // Simulación de Semantic Kernel
-    for (const concept of concepts) {
-      if (!concept.examples || concept.examples.length === 0) {
-        concept.examples = this._generateExamples(concept.name, context.text);
-      }
-      
-      if (!concept.properties || Object.keys(concept.properties).length === 0) {
-        concept.properties = this._generateProperties(concept.name);
-      }
+  async _enrichWithSemanticKernel(concept, context) {
+    // Si hay servicio real disponible, usarlo. De lo contrario, simulación
+    
+    // Añadir ejemplos si no existen
+    if (!concept.examples || concept.examples.length === 0) {
+      concept.examples = this._generateExamples(concept.name, context.text);
+    }
+    
+    // Añadir propiedades si no existen
+    if (!concept.properties || Object.keys(concept.properties).length === 0) {
+      concept.properties = this._generateProperties(concept.name);
+    }
+    
+    // Añadir dominio si no existe
+    if (!concept.domain) {
+      concept.domain = this._generateDomain(concept.name);
     }
   }
   
   /**
    * Enriquece conceptos utilizando Semantic Scholar
-   * @param {Array} concepts - Conceptos a enriquecer
+   * @param {Object} concept - Concepto a enriquecer
    * @param {string} language - Idioma del texto
    * @returns {Promise<void>}
    * @private
    */
-  async _enrichWithSemanticScholar(concepts, language) {
-    // Simulación de Semantic Scholar
-    const isAcademic = this._detectIfAcademic(concepts);
+  async _enrichWithSemanticScholar(concept, language) {
+    // Si hay servicio real disponible, usarlo. De lo contrario, simulación
+    const isAcademic = this._detectIfConceptIsAcademic(concept);
     
     if (isAcademic) {
-      for (const concept of concepts) {
-        if (!concept.academicReferences) {
-          concept.academicReferences = this._generateAcademicReferences(concept.name, language);
-        }
+      if (!concept.academicReferences) {
+        concept.academicReferences = this._generateAcademicReferences(concept.name, language);
       }
     }
   }
   
   /**
    * Enriquece conceptos utilizando Wikidata
-   * @param {Array} concepts - Conceptos a enriquecer
+   * @param {Object} concept - Concepto a enriquecer
    * @param {string} language - Idioma del texto
    * @returns {Promise<void>}
    * @private
    */
-  async _enrichWithWikidata(concepts, language) {
-    // Simulación de Wikidata
-    for (const concept of concepts) {
-      if (!concept.externalDefinitions) {
-        concept.externalDefinitions = {
-          wikidata: this._generateWikidataDefinition(concept.name, language)
-        };
-      }
+  async _enrichWithWikidata(concept, language) {
+    // Si hay servicio real disponible, usarlo. De lo contrario, simulación
+    if (!concept.externalDefinitions) {
+      concept.externalDefinitions = {};
+    }
+    
+    if (!concept.externalDefinitions.wikidata) {
+      concept.externalDefinitions.wikidata = this._generateWikidataDefinition(concept.name, language);
+    }
+    
+    // Si no hay definición principal, usar la de Wikidata
+    if (!concept.definition && concept.externalDefinitions.wikidata) {
+      concept.definition = concept.externalDefinitions.wikidata.text;
     }
   }
   
   /**
    * Enriquece conceptos y relaciones utilizando ConceptNet
-   * @param {Array} concepts - Conceptos a enriquecer
+   * @param {Object} concept - Concepto a enriquecer
    * @param {Array} relationships - Relaciones existentes
    * @param {string} language - Idioma del texto
-   * @returns {Promise<Object>} - Nuevos conceptos y relaciones
+   * @returns {Promise<void>}
    * @private
    */
-  async _enrichWithConceptNet(concepts, relationships, language) {
-    // Simulación de ConceptNet
-    const newConcepts = [];
-    const newRelationships = [];
+  async _enrichWithConceptNet(concept, relationships, language) {
+    // Si hay servicio real disponible, usarlo. De lo contrario, simulación
     
-    // Identificar conceptos principales (con mayor importancia)
-    const mainConcepts = concepts
-      .filter(c => c.importance >= 0.7)
-      .slice(0, 3);
-    
-    for (const concept of mainConcepts) {
-      // Generar un nuevo concepto relacionado
-      const newConcept = this._generateRelatedConcept(concept.name, language);
+    // Generar conceptos relacionados si no existen
+    if (!concept.relatedConcepts) {
+      concept.relatedConcepts = [];
       
-      if (newConcept) {
-        // Verificar que no existe ya
-        if (!concepts.some(c => c.name.toLowerCase() === newConcept.name.toLowerCase())) {
-          newConcepts.push(newConcept);
-          
-          // Crear relación con el concepto original
-          newRelationships.push({
-            id: `rel_conceptnet_${newRelationships.length + 1}`,
-            source: concept.id,
-            target: newConcept.id,
-            type: 'relacionado',
-            label: `${concept.name} relacionado con ${newConcept.name}`,
-            weight: 2,
-            source: 'conceptnet'
-          });
+      // Limitar a conceptos importantes
+      if (concept.importance >= 0.5) {
+        const relatedConcept = this._generateRelatedConcept(concept.name, language);
+        
+        if (relatedConcept) {
+          concept.relatedConcepts.push(relatedConcept);
         }
       }
     }
-    
-    return { 
-      newConcepts, 
-      newRelationships 
-    };
   }
   
-  // Métodos auxiliares para la simulación
+  // Métodos auxiliares (simulados) para generar enriquecimiento
   
-  /**
-   * Genera ejemplos para un concepto
-   * @param {string} conceptName - Nombre del concepto
-   * @param {string} text - Texto original
-   * @returns {Array<string>} - Ejemplos generados
-   * @private
-   */
   _generateExamples(conceptName, text) {
-    // Buscar ejemplos en el texto (simplificado)
-    const examples = [];
-    const sentences = text.split(/[.!?]+/);
-    
-    // Buscar oraciones con "por ejemplo", "como" seguidas del concepto
-    for (const sentence of sentences) {
-      if ((sentence.toLowerCase().includes('por ejemplo') || 
-           sentence.toLowerCase().includes(' como ')) && 
-          sentence.toLowerCase().includes(conceptName.toLowerCase())) {
-        examples.push(sentence.trim());
-        if (examples.length >= 2) break;
-      }
-    }
-    
-    // Si no se encontraron suficientes, generar sintéticos
-    if (examples.length < 2) {
-      examples.push(`Un ejemplo de ${conceptName} es su aplicación en contextos educativos.`);
-    }
-    
-    return examples;
+    // Simulación: generar ejemplos basados en el nombre del concepto
+    return [
+      `Ejemplo relacionado con ${conceptName}`,
+      `Caso de uso de ${conceptName} en contexto práctico`,
+      `Aplicación de ${conceptName} en situaciones reales`
+    ].slice(0, this.enrichmentLimits.maxExamplesPerConcept);
   }
   
-  /**
-   * Genera propiedades para un concepto
-   * @param {string} conceptName - Nombre del concepto
-   * @returns {Object} - Propiedades generadas
-   * @private
-   */
   _generateProperties(conceptName) {
-    // Propiedades genéricas (simuladas)
-    return {
-      domain: this._generateDomain(conceptName),
-      complexity: Math.random() > 0.5 ? 'alta' : 'media',
-      applicability: Math.random() > 0.7 ? 'general' : 'específica'
+    // Simulación: generar propiedades basadas en el nombre del concepto
+    const properties = {
+      característica: `Principal característica de ${conceptName}`,
+      aplicación: `Aplicación común de ${conceptName}`,
+      limitación: `Limitación típica de ${conceptName}`
     };
+    
+    // Limitar número de propiedades
+    const propertyKeys = Object.keys(properties);
+    if (propertyKeys.length > this.enrichmentLimits.maxPropertiesPerConcept) {
+      const limitedProperties = {};
+      for (let i = 0; i < this.enrichmentLimits.maxPropertiesPerConcept; i++) {
+        limitedProperties[propertyKeys[i]] = properties[propertyKeys[i]];
+      }
+      return limitedProperties;
+    }
+    
+    return properties;
   }
   
-  /**
-   * Genera un dominio para un concepto
-   * @param {string} conceptName - Nombre del concepto
-   * @returns {string} - Dominio generado
-   * @private
-   */
   _generateDomain(conceptName) {
-    const domains = [
-      'educación', 'tecnología', 'ciencia', 'humanidades', 
-      'arte', 'medicina', 'negocios', 'filosofía', 'matemáticas'
-    ];
-    
-    // Simulación simple
+    // Simulación: asignar un dominio al concepto
+    const domains = ['Ciencia', 'Tecnología', 'Filosofía', 'Arte', 'Historia', 'Matemáticas'];
     return domains[Math.floor(Math.random() * domains.length)];
   }
   
-  /**
-   * Detecta si el conjunto de conceptos es de naturaleza académica
-   * @param {Array} concepts - Conceptos a analizar
-   * @returns {boolean} - true si parecen académicos
-   * @private
-   */
-  _detectIfAcademic(concepts) {
-    // Palabras clave académicas
-    const academicKeywords = [
-      'teoría', 'modelo', 'método', 'análisis', 'estudio', 
-      'investigación', 'paradigma', 'hipótesis', 'tesis'
-    ];
+  _detectIfConceptIsAcademic(concept) {
+    // Simulación: detectar si es un concepto académico basado en características
+    const academicKeywords = ['teoría', 'modelo', 'análisis', 'estudio', 'investigación'];
     
-    // Contar conceptos que parecen académicos
-    const academicCount = concepts.filter(concept => 
-      academicKeywords.some(keyword => 
-        concept.name.toLowerCase().includes(keyword) || 
-        (concept.description && concept.description.toLowerCase().includes(keyword))
-      )
-    ).length;
+    // Comprobar en nombre y propiedades
+    const textToCheck = [
+      concept.name,
+      concept.definition || '',
+      ...(concept.properties ? Object.values(concept.properties) : [])
+    ].join(' ').toLowerCase();
     
-    // Si más del 30% son académicos, considerar el conjunto como académico
-    return (academicCount / concepts.length) > 0.3;
+    return academicKeywords.some(keyword => textToCheck.includes(keyword));
   }
   
-  /**
-   * Genera referencias académicas para un concepto
-   * @param {string} conceptName - Nombre del concepto
-   * @param {string} language - Idioma
-   * @returns {Array<Object>} - Referencias generadas
-   * @private
-   */
   _generateAcademicReferences(conceptName, language) {
-    // Referencias simuladas
+    // Simulación: generar referencias académicas
+    const currentYear = new Date().getFullYear();
+    
     return [
       {
-        title: `Avances en el estudio de ${conceptName}`,
-        authors: ['García, A.', 'Martínez, B.'],
-        year: 2020,
-        journal: 'Revista de Estudios Avanzados',
-        relevance: 0.85
+        title: `Estudio sobre ${conceptName} y sus aplicaciones`,
+        authors: ['Autor Apellido1', 'Autor Apellido2'],
+        year: currentYear - Math.floor(Math.random() * 5),
+        journal: 'Revista Académica Internacional',
+        url: `https://example.org/papers/${conceptName.replace(/\s+/g, '_').toLowerCase()}`
       },
       {
-        title: `Un análisis comparativo sobre ${conceptName}`,
-        authors: ['López, C.'],
-        year: 2018,
-        journal: 'Journal of Theoretical Studies',
-        relevance: 0.7
+        title: `Análisis comparativo de ${conceptName}`,
+        authors: ['Investigador Nombre'],
+        year: currentYear - Math.floor(Math.random() * 10),
+        journal: 'Journal of Advanced Studies',
+        url: `https://example.org/research/${conceptName.replace(/\s+/g, '-').toLowerCase()}`
       }
     ];
   }
   
-  /**
-   * Genera una definición de Wikidata para un concepto
-   * @param {string} conceptName - Nombre del concepto
-   * @param {string} language - Idioma
-   * @returns {string} - Definición generada
-   * @private
-   */
   _generateWikidataDefinition(conceptName, language) {
-    // Simulación de definición
-    if (language === 'es') {
-      return `${conceptName}: término que refiere a un elemento conceptual en el campo del conocimiento estructurado.`;
-    } else {
-      return `${conceptName}: term referring to a conceptual element in the field of structured knowledge.`;
-    }
+    // Simulación: generar definición de Wikidata
+    return {
+      text: `${conceptName} es un concepto importante en su campo, que se caracteriza por sus propiedades distintivas y aplicaciones en diversos contextos.`,
+      id: `Q${Math.floor(Math.random() * 1000000)}`,
+      url: `https://www.wikidata.org/wiki/${conceptName.replace(/\s+/g, '_')}`,
+      language
+    };
   }
   
-  /**
-   * Genera un concepto relacionado basado en ConceptNet
-   * @param {string} conceptName - Nombre del concepto base
-   * @param {string} language - Idioma
-   * @returns {Object|null} - Nuevo concepto relacionado
-   * @private
-   */
   _generateRelatedConcept(conceptName, language) {
-    // Lista de posibles relaciones
-    const relatedTerms = [
-      { suffix: ' aplicado', description: 'Aplicación práctica del concepto' },
-      { suffix: ' avanzado', description: 'Versión más compleja o sofisticada' },
-      { prefix: 'Meta', description: 'Análisis o estudio del concepto en sí mismo' }
-    ];
-    
-    const selected = relatedTerms[Math.floor(Math.random() * relatedTerms.length)];
-    const newName = selected.prefix ? 
-                    `${selected.prefix}${conceptName}` : 
-                    `${conceptName}${selected.suffix}`;
+    // Simulación: generar un concepto relacionado
+    const relatedName = `${conceptName} aplicado`;
     
     return {
-      id: `concept_cn_${Date.now()}`,
-      name: newName,
-      description: selected.description,
-      importance: 0.6,
-      source: 'conceptnet'
+      id: `concept_related_${Math.floor(Math.random() * 1000)}`,
+      name: relatedName,
+      level: 2,
+      importance: 0.4,
+      originalForm: relatedName,
+      definition: `Aplicación práctica o variante específica de ${conceptName} en contextos reales.`,
+      childrenIds: []
     };
   }
 }

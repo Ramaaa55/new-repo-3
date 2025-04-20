@@ -285,6 +285,124 @@ class ValidationModule extends BaseModule {
       clusters: Math.floor(Math.random() * 3) + 1
     };
   }
+
+  // Método para validar fragmentos de texto contra el contenido original
+  async _validateTextFragments(concepts, originalText) {
+    // Verificar que el texto original no sea null o undefined
+    if (!originalText) {
+      console.warn('No se puede validar fragmentos de texto: texto original indefinido o vacío');
+      return { 
+        validConcepts: concepts,
+        invalidFragments: [] 
+      };
+    }
+    
+    const originalTextLower = originalText.toLowerCase();
+    const invalidFragments = [];
+    const validConcepts = [];
+
+    for (const concept of concepts) {
+      // Evitar llamar a substring en fragmentos nulos o indefinidos
+      if (concept.originalFragment && typeof concept.originalFragment === 'string') {
+        const fragment = concept.originalFragment.toLowerCase();
+        // Verificar si el fragmento existe en el texto original
+        if (originalTextLower.includes(fragment)) {
+          validConcepts.push(concept);
+        } else {
+          invalidFragments.push({
+            concept: concept.name,
+            fragment: concept.originalFragment,
+            reason: 'No se encontró en el texto original'
+          });
+          // Mantener el concepto pero marcar como validación fallida
+          concept.validationFailed = true;
+          validConcepts.push(concept);
+        }
+      } else {
+        // Si no hay fragmento original, no podemos validar contra el texto
+        // Marcamos como advertencia y mantenemos el concepto
+        console.warn(`Concepto sin fragmento original: ${concept.name}`);
+        concept.validationWarning = 'Sin fragmento original para validar';
+        validConcepts.push(concept);
+      }
+    }
+
+    return {
+      validConcepts,
+      invalidFragments
+    };
+  }
+
+  // Método para validar relaciones 
+  async _validateRelationships(relationships, concepts) {
+    const validRelationships = [];
+    const invalidRelationships = [];
+    
+    // Crear mapa de conceptos para búsqueda más eficiente
+    const conceptMap = new Map();
+    if (concepts && Array.isArray(concepts)) {
+      concepts.forEach(concept => conceptMap.set(concept.id, concept));
+    }
+
+    if (!relationships || !Array.isArray(relationships)) {
+      console.warn('No hay relaciones para validar o formato inválido');
+      return {
+        validRelationships: [],
+        invalidRelationships: []
+      };
+    }
+
+    for (const relation of relationships) {
+      let isValid = true;
+      const validationErrors = [];
+      
+      // Verificar campos obligatorios
+      if (!relation.source) {
+        isValid = false;
+        validationErrors.push('Falta ID de origen');
+      }
+      
+      if (!relation.target) {
+        isValid = false;
+        validationErrors.push('Falta ID de destino');
+      }
+      
+      // Verificar que los conceptos referenciados existan
+      if (relation.source && !conceptMap.has(relation.source)) {
+        isValid = false;
+        validationErrors.push(`Concepto origen (${relation.source}) no existe`);
+      }
+      
+      if (relation.target && !conceptMap.has(relation.target)) {
+        isValid = false;
+        validationErrors.push(`Concepto destino (${relation.target}) no existe`);
+      }
+      
+      // Verificar que el tipo de relación no sea null o undefined
+      if (!relation.type) {
+        isValid = false;
+        validationErrors.push('Falta tipo de relación');
+      } else if (typeof relation.type === 'string' && relation.type.trim() === '') {
+        isValid = false;
+        validationErrors.push('Tipo de relación vacío');
+      }
+      
+      // Agregar a la lista correspondiente
+      if (isValid) {
+        validRelationships.push(relation);
+      } else {
+        invalidRelationships.push({
+          relation: { ...relation },
+          errors: validationErrors
+        });
+      }
+    }
+    
+    return {
+      validRelationships,
+      invalidRelationships
+    };
+  }
 }
 
 module.exports = ValidationModule; 

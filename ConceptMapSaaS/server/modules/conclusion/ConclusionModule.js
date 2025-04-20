@@ -4,7 +4,7 @@
  */
 
 const BaseModule = require('../BaseModule');
-const path = require('path');
+const { performance } = require('perf_hooks');
 
 /**
  * Módulo de Conclusión Descriptiva (Etapa 6)
@@ -14,18 +14,27 @@ const path = require('path');
 class ConclusionModule extends BaseModule {
   /**
    * Constructor del módulo de conclusión
-   * @param {Object} config - Configuración del módulo
+   * @param {Object} options - Opciones de configuración
    */
-  constructor(config = {}) {
-    super('conclusion', 'Conclusión Descriptiva', config);
+  constructor(options = {}) {
+    super('conclusion', options);
     
-    // Cargar servicios necesarios para la conclusión
+    // Cargar servicios necesarios
     try {
-      // Intentar cargar servicios relevantes
-      this.conceptMapService = require(path.join(process.cwd(), 'server/services/fixed-conceptMapService'));
+      this.conceptMapService = require('../../services/fixed-conceptMapService');
+      this.aiSdkService = require('../../services/aiSdkService');
     } catch (error) {
-      console.warn(`Advertencia en ConclusionModule: No se pudieron cargar algunos servicios: ${error.message}`);
+      console.error(`Error al cargar servicios para ConclusionModule: ${error.message}`);
     }
+    
+    // Opciones específicas de generación de conclusiones
+    this.conclusionOptions = {
+      maxSummaryLength: options.maxSummaryLength || 500,
+      includeProcessingSummary: options.includeProcessingSummary !== false,
+      includeVerification: options.includeVerification !== false,
+      includeCompatibility: options.includeCompatibility !== false,
+      generateRecommendations: options.generateRecommendations !== false
+    };
   }
   
   /**
@@ -33,448 +42,655 @@ class ConclusionModule extends BaseModule {
    * @param {Object} input - Datos de entrada
    */
   validateInput(input) {
-    if (!input || !input.concepts || !Array.isArray(input.concepts) || input.concepts.length === 0) {
-      throw new Error('ConclusionModule: La entrada debe contener una lista de conceptos');
+    super.validateInput(input);
+    
+    if (!input.concepts || !Array.isArray(input.concepts)) {
+      throw new Error('Se requieren conceptos para generar la conclusión');
     }
     
-    if (!input.relationships || !Array.isArray(input.relationships) || input.relationships.length === 0) {
-      throw new Error('ConclusionModule: La entrada debe contener una lista de relaciones');
+    if (!input.relationships || !Array.isArray(input.relationships)) {
+      throw new Error('Se requieren relaciones para generar la conclusión');
     }
   }
   
   /**
-   * Implementación del procesamiento para la etapa de conclusión
+   * Implementación del procesamiento para conclusión
    * @param {Object} input - Datos de entrada
    * @param {Object} context - Contexto de ejecución
-   * @returns {Promise<Object>} - Resultado del procesamiento
+   * @returns {Promise<Object>} - Resultado con conclusión agregada
    */
   async _processImplementation(input, context) {
-    console.log('ETAPA 6: Conclusión Descriptiva');
+    console.log('ETAPA 6: Conclusión Descriptiva - Iniciando');
+    const startTime = performance.now();
     
-    const startTime = Date.now();
-    const concepts = [...(input.concepts || [])];
-    const relationships = [...(input.relationships || [])];
-    const originalText = input.original?.text || '';
+    // Extraer información relevante
+    const text = input.text || (input.original && input.original.text);
+    const concepts = input.concepts;
+    const relationships = input.relationships;
+    const language = (input.original && input.original.language) || input.language || 'es';
     
-    try {
-      // 1. Verificar que todas las etapas anteriores se hayan ejecutado
-      const stageVerification = this._verifyPreviousStages(input);
-      console.log(`Verificación de etapas completada: ${stageVerification.completedStages}/${stageVerification.totalStages} etapas ejecutadas`);
-      
-      // 2. Generar estadísticas generales del mapa conceptual
-      const statistics = this._generateStatistics(concepts, relationships, originalText);
-      console.log(`Estadísticas generadas: ${statistics.conceptCount} conceptos, ${statistics.relationshipCount} relaciones`);
-      
-      // 3. Generar un resumen cualitativo del mapa conceptual
-      const summary = this._generateSummary(concepts, relationships, statistics, stageVerification);
-      console.log('Resumen cualitativo generado');
-      
-      // 4. Generar recomendaciones para mejorar el mapa conceptual
-      const recommendations = this._generateRecommendations(concepts, relationships, statistics, stageVerification);
-      console.log(`${recommendations.length} recomendaciones generadas`);
-      
-      // Agregar metadatos de conclusión
-      input.metadata = input.metadata || {};
-      input.metadata.conclusion = {
-        stage: 'conclusion',
-        stageVerification,
-        statistics,
-        summary,
-        recommendations,
-        timestamp: new Date().toISOString(),
-        processingTimeMs: Date.now() - startTime
-      };
-      
-      return input;
-    } catch (error) {
-      console.error(`Error en la conclusión: ${error.message}`);
-      // Agregar información sobre el error a los metadatos
-      input.metadata = input.metadata || {};
-      input.metadata.conclusion = {
-        stage: 'conclusion',
-        error: error.message,
-        timestamp: new Date().toISOString(),
-        processingTimeMs: Date.now() - startTime
-      };
-      
-      // Devolver los datos sin cambios
-      return input;
-    }
+    // Recopilar estadísticas de las etapas
+    const stageStats = input.metadata && input.metadata.stageResults;
+    
+    // 1. Verificar integridad del mapa conceptual generado
+    const verificationResults = await this._verifyMapIntegrity(concepts, relationships, text);
+    
+    // 2. Generar estadísticas completas del proceso
+    const statistics = this._generateStatistics(concepts, relationships, stageStats);
+    
+    // 3. Evaluar compatibilidad con formatos de visualización
+    const compatibilityResults = this._evaluateVisualCompatibility(concepts, relationships, input);
+    
+    // 4. Generar recomendaciones de mejora si está habilitado
+    const recommendations = this.conclusionOptions.generateRecommendations ? 
+      await this._generateRecommendations(concepts, relationships, verificationResults) : [];
+    
+    // 5. Crear resumen del mapa conceptual
+    const summary = await this._generateMapSummary(
+      concepts, 
+      relationships, 
+      statistics, 
+      verificationResults,
+      language
+    );
+    
+    // Crear objeto de conclusión
+    const conclusion = {
+      summary,
+      verification: verificationResults,
+      statistics,
+      compatibility: compatibilityResults,
+      recommendations,
+      processingTime: performance.now() - startTime
+    };
+    
+    // Actualizar el resultado con la conclusión
+    input.conclusion = conclusion;
+    
+    // Añadir metadatos específicos de esta etapa
+    if (!input.metadata) input.metadata = {};
+    if (!input.metadata.stageResults) input.metadata.stageResults = {};
+    
+    input.metadata.stageResults.conclusion = {
+      verificationPassed: verificationResults.passed,
+      summaryLength: summary.length,
+      recommendationsCount: recommendations.length,
+      processingTimeMs: conclusion.processingTime
+    };
+    
+    console.log(`ETAPA 6: Conclusión Descriptiva - Completada en ${conclusion.processingTime.toFixed(2)}ms`);
+    console.log(`Verificación: ${verificationResults.passed ? 'EXITOSA' : 'CON ADVERTENCIAS'}, Recomendaciones: ${recommendations.length}`);
+    
+    return input;
   }
   
   /**
-   * Verifica que todas las etapas anteriores se hayan ejecutado correctamente
+   * Verifica la integridad del mapa conceptual
+   * @param {Array} concepts - Conceptos del mapa
+   * @param {Array} relationships - Relaciones del mapa
+   * @param {string} text - Texto original
+   * @returns {Promise<Object>} - Resultados de la verificación
    * @private
    */
-  _verifyPreviousStages(input) {
-    // Etapas esperadas en orden
-    const expectedStages = [
-      'organization',  // Etapa 1
-      'reasoning',     // Etapa 2
-      'enrichment',    // Etapa 3
-      'validation',    // Etapa 4
-      'aesthetics'     // Etapa 5
-    ];
+  async _verifyMapIntegrity(concepts, relationships, text) {
+    const startTime = performance.now();
+    console.log('Verificando integridad del mapa conceptual');
     
-    const metadata = input.metadata || {};
-    const completedStages = [];
-    const missingStages = [];
-    const stagesWithErrors = [];
+    const verificationResults = {
+      passed: true,
+      startTime,
+      issues: [],
+      warnings: [],
+      conceptValidation: {
+        total: concepts.length,
+        withoutDefinition: 0,
+        withoutHierarchy: 0,
+        tooGeneric: 0
+      },
+      relationshipValidation: {
+        total: relationships.length,
+        typeMissing: 0,
+        lowConfidence: 0,
+        invalid: 0
+      },
+      textCoverage: this._calculateTextCoverage(concepts, text)
+    };
     
-    // Verificar cada etapa
-    for (const stage of expectedStages) {
-      if (metadata[stage]) {
-        if (metadata[stage].error) {
-          stagesWithErrors.push({
-            stage,
-            error: metadata[stage].error
-          });
-        } else {
-          completedStages.push(stage);
+    // 1. Verificar conceptos
+    concepts.forEach(concept => {
+      // Verificar definiciones
+      if (!concept.definition || concept.definition.length < 10) {
+        verificationResults.conceptValidation.withoutDefinition++;
+        verificationResults.warnings.push(`Concepto "${concept.name}" sin definición adecuada`);
+      }
+      
+      // Verificar jerarquía
+      if (concept.level === undefined || concept.level === null) {
+        verificationResults.conceptValidation.withoutHierarchy++;
+        verificationResults.warnings.push(`Concepto "${concept.name}" sin nivel jerárquico asignado`);
+      }
+      
+      // Verificar especificidad
+      if (concept.name.length < 3 || /^(cosa|elemento|parte|aspecto)$/i.test(concept.name)) {
+        verificationResults.conceptValidation.tooGeneric++;
+        verificationResults.issues.push(`Concepto "${concept.name}" demasiado genérico`);
+      }
+    });
+    
+    // 2. Verificar relaciones
+    const conceptIds = new Set(concepts.map(c => c.id));
+    
+    relationships.forEach(rel => {
+      // Verificar tipo
+      if (!rel.type || !rel.label) {
+        verificationResults.relationshipValidation.typeMissing++;
+        verificationResults.warnings.push(`Relación ${rel.id} sin tipo o etiqueta`);
+      }
+      
+      // Verificar confianza
+      if (rel.confidence !== undefined && rel.confidence < 0.4) {
+        verificationResults.relationshipValidation.lowConfidence++;
+        verificationResults.warnings.push(`Relación ${rel.id} con baja confianza (${rel.confidence})`);
+      }
+      
+      // Verificar referencias válidas
+      if (!conceptIds.has(rel.sourceId) || !conceptIds.has(rel.targetId)) {
+        verificationResults.relationshipValidation.invalid++;
+        verificationResults.issues.push(`Relación ${rel.id} con conceptos inválidos (${rel.sourceId} -> ${rel.targetId})`);
+      }
+    });
+    
+    // 3. Verificar completitud con AI SDK si está disponible
+    if (this.aiSdkService) {
+      try {
+        const completenessCheck = await this.aiSdkService.verifyMapCompleteness({
+          concepts,
+          relationships,
+          text
+        });
+        
+        if (completenessCheck && completenessCheck.missingConcepts) {
+          verificationResults.missingConcepts = completenessCheck.missingConcepts;
+          verificationResults.warnings.push(`AI detectó ${completenessCheck.missingConcepts.length} conceptos potencialmente ausentes`);
         }
-      } else {
-        missingStages.push(stage);
+      } catch (error) {
+        console.warn(`Error en verificación AI: ${error.message}`);
       }
     }
     
-    return {
-      totalStages: expectedStages.length,
-      completedStages: completedStages.length,
-      completedStagesList: completedStages,
-      missingStages,
-      stagesWithErrors,
-      allStagesCompleted: completedStages.length === expectedStages.length,
-      isValid: completedStages.length >= 2 // Requerimos al menos las 2 primeras etapas
-    };
+    // Determinar si pasa la verificación
+    const hasIssues = verificationResults.issues.length > 0;
+    const hasManyWarnings = verificationResults.warnings.length > 3;
+    const hasPoorCoverage = verificationResults.textCoverage < 0.6;
+    
+    verificationResults.passed = !hasIssues && !hasManyWarnings && !hasPoorCoverage;
+    verificationResults.processingTime = performance.now() - startTime;
+    
+    return verificationResults;
   }
   
   /**
-   * Genera estadísticas sobre el mapa conceptual
+   * Calcula la cobertura del texto por los conceptos
+   * @param {Array} concepts - Conceptos del mapa
+   * @param {string} text - Texto original
+   * @returns {number} - Porcentaje de cobertura (0-1)
    * @private
    */
-  _generateStatistics(concepts, relationships, originalText) {
-    // Estadísticas de conceptos
-    const conceptCount = concepts.length;
-    const conceptsByLevel = this._groupByProperty(concepts, 'hierarchyLevel');
-    const conceptsByCategory = this._groupByProperty(concepts, 'category');
-    const conceptsWithDescription = concepts.filter(c => c.description && c.description.length > 0).length;
-    const conceptsWithExamples = concepts.filter(c => c.examples && c.examples.length > 0).length;
+  _calculateTextCoverage(concepts, text) {
+    if (!text) return 1; // Si no hay texto, asumir cobertura completa
     
-    // Validación de conceptos
-    const validatedConcepts = concepts.filter(c => c.validation && c.validation.isValid === true).length;
-    const invalidConcepts = concepts.filter(c => c.validation && c.validation.isValid === false).length;
+    // Preparar texto para análisis
+    const normalizedText = text.toLowerCase();
+    const words = normalizedText.split(/\W+/).filter(w => w.length > 3);
+    const uniqueWords = new Set(words);
     
-    // Estadísticas de relaciones
-    const relationshipCount = relationships.length;
-    const relationshipsByType = this._groupByProperty(relationships, 'type');
-    const validatedRelationships = relationships.filter(r => r.validation && r.validation.isValid === true).length;
-    const invalidRelationships = relationships.filter(r => r.validation && r.validation.isValid === false).length;
+    // Contar palabras de conceptos que aparecen en el texto
+    let matchCount = 0;
     
-    // Densidad de la red: Proporción de relaciones respecto al máximo posible
-    // Para un grafo dirigido, el máximo es n(n-1) donde n es el número de conceptos
-    const maxPossibleRelationships = conceptCount * (conceptCount - 1);
-    const networkDensity = maxPossibleRelationships > 0 
-      ? (relationshipCount / maxPossibleRelationships).toFixed(4) 
-      : 0;
+    concepts.forEach(concept => {
+      const conceptWords = concept.name.toLowerCase().split(/\W+/).filter(w => w.length > 3);
+      const originalFormWords = (concept.originalForm || concept.name).toLowerCase().split(/\W+/).filter(w => w.length > 3);
+      
+      // Combinar y eliminar duplicados
+      const allConceptWords = new Set([...conceptWords, ...originalFormWords]);
+      
+      allConceptWords.forEach(word => {
+        if (uniqueWords.has(word)) {
+          matchCount++;
+        }
+      });
+    });
     
-    // Cobertura de texto: proporción aproximada del texto original cubierto por conceptos
-    const textCoverage = this._estimateTextCoverage(concepts, originalText);
-    
-    return {
-      conceptCount,
-      relationshipCount,
-      conceptsByLevel,
-      conceptsByCategory,
-      conceptsWithDescription,
-      conceptsWithExamples,
-      validatedConcepts,
-      invalidConcepts,
-      relationshipsByType,
-      validatedRelationships,
-      invalidRelationships,
-      networkDensity: parseFloat(networkDensity),
-      textCoverage
-    };
+    // Calcular porcentaje (limitado a 1)
+    return Math.min(1, matchCount / Math.max(1, uniqueWords.size));
   }
   
   /**
-   * Genera un resumen cualitativo del mapa conceptual
+   * Genera estadísticas completas del mapa conceptual
+   * @param {Array} concepts - Conceptos del mapa
+   * @param {Array} relationships - Relaciones del mapa
+   * @param {Object} stageStats - Estadísticas de etapas previas
+   * @returns {Object} - Estadísticas completas
    * @private
    */
-  _generateSummary(concepts, relationships, statistics, stageVerification) {
-    // Determinar palabras clave para la estructura
-    let structureType = 'jerárquica';
-    if (statistics.networkDensity > 0.5) {
-      structureType = 'altamente conectada';
-    } else if (statistics.networkDensity > 0.2) {
-      structureType = 'moderadamente conectada';
-    }
-    
-    // Determinar calidad general
-    const qualityIndicators = [
-      statistics.validatedConcepts / (statistics.conceptCount || 1),
-      statistics.validatedRelationships / (statistics.relationshipCount || 1),
-      statistics.conceptsWithDescription / (statistics.conceptCount || 1),
-      statistics.textCoverage,
-      stageVerification.completedStages / (stageVerification.totalStages || 1)
-    ];
-    
-    const qualityScore = qualityIndicators.reduce((sum, val) => sum + val, 0) / qualityIndicators.length;
-    
-    let qualityDescription = 'regular';
-    if (qualityScore > 0.8) {
-      qualityDescription = 'excelente';
-    } else if (qualityScore > 0.6) {
-      qualityDescription = 'buena';
-    } else if (qualityScore < 0.4) {
-      qualityDescription = 'requiere mejoras';
-    }
-    
-    // Determinar conceptos principales
-    const mainConcepts = concepts
-      .filter(c => c.importance > 0.7 || c.hierarchyLevel === 0)
-      .sort((a, b) => (b.importance || 0) - (a.importance || 0))
-      .slice(0, 5)
-      .map(c => c.name);
-    
-    // Etapas completadas
-    const completedStagesText = stageVerification.completedStages === stageVerification.totalStages
-      ? 'Todas las etapas del proceso de generación se han completado exitosamente.'
-      : `Se han completado ${stageVerification.completedStages} de ${stageVerification.totalStages} etapas del proceso.`;
-    
-    // Texto sobre etapas faltantes
-    const missingStagesText = stageVerification.missingStages.length > 0
-      ? `Las siguientes etapas no se ejecutaron: ${stageVerification.missingStages.join(', ')}.`
-      : '';
-    
-    // Construir resumen
-    const summary = {
-      title: 'Análisis del Mapa Conceptual',
-      overallQuality: qualityDescription,
-      structureType,
-      mainConcepts,
-      completionStatus: {
-        text: completedStagesText,
-        missingStagesTooltip: stageVerification.missingStages.length > 0 ? missingStagesText : undefined
+  _generateStatistics(concepts, relationships, stageStats) {
+    // Estadísticas básicas
+    const statistics = {
+      counts: {
+        concepts: concepts.length,
+        relationships: relationships.length,
+        hierarchyLevels: 0
       },
-      keyFindings: [
-        `El mapa contiene ${statistics.conceptCount} conceptos organizados en una estructura ${structureType}.`,
-        `Se identificaron ${statistics.relationshipCount} relaciones entre los conceptos.`,
-        `Los conceptos principales incluyen: ${mainConcepts.slice(0, 3).join(', ')}${mainConcepts.length > 3 ? '...' : '.'}`,
-        `La calidad general del mapa es ${qualityDescription}.`,
-        completedStagesText
-      ]
+      averages: {
+        conceptsPerLevel: 0,
+        relationshipsPerConcept: 0,
+        importanceScore: 0
+      },
+      distribution: {
+        byLevel: {},
+        byImportance: {
+          high: 0,
+          medium: 0,
+          low: 0
+        },
+        byType: {}
+      },
+      enrichment: {
+        conceptsWithDefinition: 0,
+        conceptsWithExamples: 0,
+        conceptsWithProperties: 0
+      }
     };
     
-    // Agregar hallazgos adicionales si hay problemas
-    if (statistics.invalidConcepts > 0 || statistics.invalidRelationships > 0) {
-      summary.keyFindings.push(`Se detectaron ${statistics.invalidConcepts} conceptos y ${statistics.invalidRelationships} relaciones que requieren revisión.`);
+    // Analizar conceptos
+    let totalImportance = 0;
+    const levels = new Set();
+    
+    concepts.forEach(concept => {
+      // Nivel
+      if (concept.level !== undefined) {
+        levels.add(concept.level);
+        if (!statistics.distribution.byLevel[concept.level]) {
+          statistics.distribution.byLevel[concept.level] = 0;
+        }
+        statistics.distribution.byLevel[concept.level]++;
+      }
+      
+      // Importancia
+      if (concept.importance !== undefined) {
+        totalImportance += concept.importance;
+        
+        if (concept.importance >= 0.7) {
+          statistics.distribution.byImportance.high++;
+        } else if (concept.importance >= 0.4) {
+          statistics.distribution.byImportance.medium++;
+        } else {
+          statistics.distribution.byImportance.low++;
+        }
+      }
+      
+      // Enriquecimiento
+      if (concept.definition && concept.definition.length > 10) {
+        statistics.enrichment.conceptsWithDefinition++;
+      }
+      
+      if (concept.examples && concept.examples.length > 0) {
+        statistics.enrichment.conceptsWithExamples++;
+      }
+      
+      if (concept.properties && Object.keys(concept.properties).length > 0) {
+        statistics.enrichment.conceptsWithProperties++;
+      }
+    });
+    
+    // Analizar relaciones
+    relationships.forEach(rel => {
+      if (rel.type) {
+        if (!statistics.distribution.byType[rel.type]) {
+          statistics.distribution.byType[rel.type] = 0;
+        }
+        statistics.distribution.byType[rel.type]++;
+      }
+    });
+    
+    // Calcular métricas derivadas
+    statistics.counts.hierarchyLevels = levels.size;
+    statistics.averages.conceptsPerLevel = concepts.length / Math.max(1, levels.size);
+    statistics.averages.relationshipsPerConcept = relationships.length / Math.max(1, concepts.length);
+    statistics.averages.importanceScore = totalImportance / Math.max(1, concepts.length);
+    
+    // Incorporar estadísticas de etapas si están disponibles
+    if (stageStats) {
+      statistics.stageProcessingTimes = {};
+      
+      Object.entries(stageStats).forEach(([stageName, stageData]) => {
+        if (stageData.processingTimeMs || stageData.durationMs) {
+          statistics.stageProcessingTimes[stageName] = stageData.processingTimeMs || stageData.durationMs;
+        }
+      });
     }
     
-    if (stageVerification.stagesWithErrors.length > 0) {
-      summary.keyFindings.push(`Se encontraron errores en ${stageVerification.stagesWithErrors.length} etapas del proceso.`);
-      summary.errorDetails = stageVerification.stagesWithErrors;
-    }
-    
-    return summary;
+    return statistics;
   }
   
   /**
-   * Genera recomendaciones para mejorar el mapa conceptual
+   * Evalúa la compatibilidad con diferentes formatos de visualización
+   * @param {Array} concepts - Conceptos del mapa
+   * @param {Array} relationships - Relaciones del mapa
+   * @param {Object} input - Datos de entrada completos
+   * @returns {Object} - Resultados de compatibilidad
    * @private
    */
-  _generateRecommendations(concepts, relationships, statistics, stageVerification) {
+  _evaluateVisualCompatibility(concepts, relationships, input) {
+    const compatibility = {
+      formats: {
+        markmap: { compatible: true, score: 0, warnings: [] },
+        d3: { compatible: true, score: 0, warnings: [] },
+        mermaid: { compatible: true, score: 0, warnings: [] }
+      },
+      recommendedFormat: null,
+      overall: { compatible: true, warnings: [] }
+    };
+    
+    // Evaluar compatibilidad con Markmap
+    if (concepts.length > 100) {
+      compatibility.formats.markmap.compatible = false;
+      compatibility.formats.markmap.warnings.push('Demasiados conceptos para Markmap (>100)');
+    } else {
+      compatibility.formats.markmap.score = 0.9 - (concepts.length / 100);
+    }
+    
+    // Evaluar compatibilidad con D3
+    if (relationships.length > 200) {
+      compatibility.formats.d3.warnings.push('Gran cantidad de relaciones (>200), puede afectar rendimiento');
+      compatibility.formats.d3.score = 0.7;
+    } else {
+      compatibility.formats.d3.score = 0.8;
+    }
+    
+    // Evaluar compatibilidad con Mermaid
+    const cycleCheck = this._checkForCycles(concepts, relationships);
+    if (cycleCheck.hasCycles) {
+      compatibility.formats.mermaid.warnings.push('Ciclos detectados, puede causar problemas en Mermaid');
+      compatibility.formats.mermaid.score = 0.5;
+    } else {
+      compatibility.formats.mermaid.score = 0.85;
+    }
+    
+    // Comprobar complejidad
+    const complexity = this._calculateComplexity(concepts, relationships);
+    if (complexity > 0.7) {
+      compatibility.overall.warnings.push('Mapa conceptual altamente complejo, considere simplificar');
+    }
+    
+    // Determinar formato recomendado
+    const scores = {
+      markmap: compatibility.formats.markmap.score,
+      d3: compatibility.formats.d3.score,
+      mermaid: compatibility.formats.mermaid.score
+    };
+    
+    compatibility.recommendedFormat = Object.entries(scores)
+      .sort((a, b) => b[1] - a[1])[0][0];
+    
+    return compatibility;
+  }
+  
+  /**
+   * Comprueba si hay ciclos en las relaciones
+   * @param {Array} concepts - Conceptos del mapa
+   * @param {Array} relationships - Relaciones del mapa
+   * @returns {Object} - Resultado del análisis de ciclos
+   * @private
+   */
+  _checkForCycles(concepts, relationships) {
+    // Construir grafo
+    const graph = {};
+    concepts.forEach(concept => {
+      graph[concept.id] = [];
+    });
+    
+    relationships.forEach(rel => {
+      if (graph[rel.sourceId]) {
+        graph[rel.sourceId].push(rel.targetId);
+      }
+    });
+    
+    // Verificar ciclos usando DFS
+    const visited = {};
+    const recursionStack = {};
+    let hasCycles = false;
+    let cycleNodes = [];
+    
+    const checkCycle = (nodeId, path = []) => {
+      if (!graph[nodeId]) return false;
+      
+      if (recursionStack[nodeId]) {
+        cycleNodes = [...path, nodeId];
+        return true;
+      }
+      
+      if (visited[nodeId]) return false;
+      
+      visited[nodeId] = true;
+      recursionStack[nodeId] = true;
+      
+      for (const neighbor of graph[nodeId]) {
+        if (checkCycle(neighbor, [...path, nodeId])) return true;
+      }
+      
+      recursionStack[nodeId] = false;
+      return false;
+    };
+    
+    for (const conceptId in graph) {
+      if (!visited[conceptId]) {
+        if (checkCycle(conceptId)) {
+          hasCycles = true;
+          break;
+        }
+      }
+    }
+    
+    return { hasCycles, cycleNodes };
+  }
+  
+  /**
+   * Calcula la complejidad del mapa conceptual
+   * @param {Array} concepts - Conceptos del mapa
+   * @param {Array} relationships - Relaciones del mapa
+   * @returns {number} - Puntuación de complejidad (0-1)
+   * @private
+   */
+  _calculateComplexity(concepts, relationships) {
+    // Factores de complejidad
+    const conceptCount = concepts.length;
+    const relationshipCount = relationships.length;
+    const levelCount = new Set(concepts.filter(c => c.level !== undefined).map(c => c.level)).size;
+    const relationshipDensity = relationshipCount / Math.max(1, conceptCount);
+    const relationshipTypeCount = new Set(relationships.filter(r => r.type).map(r => r.type)).size;
+    
+    // Calcular puntuación de complejidad
+    const complexityScore = (
+      (0.3 * Math.min(1, conceptCount / 50)) +
+      (0.3 * Math.min(1, relationshipDensity / 3)) +
+      (0.2 * Math.min(1, levelCount / 5)) +
+      (0.2 * Math.min(1, relationshipTypeCount / 5))
+    );
+    
+    return complexityScore;
+  }
+  
+  /**
+   * Genera recomendaciones de mejora para el mapa conceptual
+   * @param {Array} concepts - Conceptos del mapa
+   * @param {Array} relationships - Relaciones del mapa
+   * @param {Object} verification - Resultados de verificación
+   * @returns {Promise<Array>} - Lista de recomendaciones
+   * @private
+   */
+  async _generateRecommendations(concepts, relationships, verification) {
     const recommendations = [];
     
-    // 1. Recomendaciones basadas en conceptos
-    if (statistics.conceptsWithDescription < statistics.conceptCount * 0.7) {
-      const conceptsWithoutDescription = concepts
-        .filter(c => !c.description || c.description.length === 0)
-        .slice(0, 3)
-        .map(c => c.name);
-      
+    // Recomendaciones basadas en verificación
+    if (verification.conceptValidation.withoutDefinition > 0) {
       recommendations.push({
-        type: 'concepts',
+        type: 'definition',
         priority: 'alta',
-        description: 'Agregar descripciones a los conceptos que no las tienen',
-        details: `${statistics.conceptCount - statistics.conceptsWithDescription} conceptos requieren descripción (ej: ${conceptsWithoutDescription.join(', ')})`
+        description: `Añadir definiciones a ${verification.conceptValidation.withoutDefinition} conceptos que carecen de ellas`
       });
     }
     
-    if (statistics.invalidConcepts > 0) {
-      const invalidConceptsExamples = concepts
-        .filter(c => c.validation && c.validation.isValid === false)
-        .slice(0, 3)
-        .map(c => c.name);
-      
+    if (verification.relationshipValidation.typeMissing > 0) {
       recommendations.push({
-        type: 'concepts',
-        priority: 'alta',
-        description: 'Revisar conceptos marcados como inválidos',
-        details: `${statistics.invalidConcepts} conceptos requieren revisión (ej: ${invalidConceptsExamples.join(', ')})`
-      });
-    }
-    
-    // 2. Recomendaciones basadas en relaciones
-    if (statistics.invalidRelationships > 0) {
-      recommendations.push({
-        type: 'relationships',
-        priority: 'alta',
-        description: 'Revisar relaciones marcadas como inválidas',
-        details: `${statistics.invalidRelationships} relaciones requieren revisión`
-      });
-    }
-    
-    if (statistics.networkDensity < 0.1) {
-      recommendations.push({
-        type: 'relationships',
+        type: 'relationship',
         priority: 'media',
-        description: 'Aumentar la interconexión entre conceptos',
-        details: 'El mapa conceptual tiene una baja densidad de conexiones'
+        description: `Especificar el tipo de relación para ${verification.relationshipValidation.typeMissing} conexiones sin clasificar`
       });
     }
     
-    // 3. Recomendaciones basadas en etapas faltantes
-    for (const missingStage of stageVerification.missingStages) {
-      let description = '';
-      let priority = 'media';
-      
-      switch (missingStage) {
-        case 'organization':
-          description = 'Ejecutar la etapa de organización y jerarquía';
-          priority = 'crítica';
-          break;
-        case 'reasoning':
-          description = 'Ejecutar la etapa de razonamiento y comprensión';
-          priority = 'crítica';
-          break;
-        case 'enrichment':
-          description = 'Ejecutar la etapa de enriquecimiento semántico';
-          priority = 'alta';
-          break;
-        case 'validation':
-          description = 'Ejecutar la etapa de validación y verificación';
-          priority = 'alta';
-          break;
-        case 'aesthetics':
-          description = 'Ejecutar la etapa de estética adaptativa';
-          priority = 'media';
-          break;
-      }
-      
-      if (description) {
+    // Recomendaciones basadas en estructura
+    const levelsDistribution = Object.entries(verification.distribution?.byLevel || {})
+      .map(([level, count]) => ({ level: parseInt(level), count }))
+      .sort((a, b) => a.level - b.level);
+    
+    if (levelsDistribution.length > 0) {
+      const topLevel = levelsDistribution[0];
+      if (topLevel.count > 7) {
         recommendations.push({
-          type: 'stages',
-          priority,
-          description,
-          details: `La etapa "${missingStage}" no fue ejecutada`
+          type: 'structure',
+          priority: 'media',
+          description: `Considerar subdividir el nivel principal que contiene ${topLevel.count} conceptos`
         });
       }
     }
     
-    // 4. Recomendaciones basadas en errores
-    for (const stageError of stageVerification.stagesWithErrors) {
+    // Recomendaciones de enriquecimiento
+    const needsExamples = concepts.filter(c => !c.examples || c.examples.length === 0).length;
+    if (needsExamples > concepts.length / 2) {
       recommendations.push({
-        type: 'error',
-        priority: 'crítica',
-        description: `Corregir error en la etapa "${stageError.stage}"`,
-        details: stageError.error
+        type: 'enrichment',
+        priority: 'baja',
+        description: 'Añadir ejemplos prácticos para ilustrar mejor los conceptos principales'
       });
     }
     
-    // 5. Recomendaciones basadas en la estructura
-    const concepts0Level = this._countByProperty(concepts, 'hierarchyLevel', 0);
-    
-    if (concepts0Level > 3) {
+    // Recomendaciones de visualización
+    const complexity = this._calculateComplexity(concepts, relationships);
+    if (complexity > 0.7) {
       recommendations.push({
-        type: 'structure',
-        priority: 'media',
-        description: 'Reducir el número de conceptos de nivel raíz',
-        details: `Hay ${concepts0Level} conceptos de nivel raíz, lo ideal es tener 1-3`
+        type: 'visualization',
+        priority: 'alta',
+        description: 'Simplificar el mapa o dividirlo en submapas debido a su alta complejidad'
       });
     }
     
-    // 6. Recomendaciones basadas en cobertura del texto
-    if (statistics.textCoverage < 0.5) {
-      recommendations.push({
-        type: 'content',
-        priority: 'media',
-        description: 'Aumentar la cobertura del texto original',
-        details: `El mapa conceptual solo cubre aproximadamente un ${Math.round(statistics.textCoverage * 100)}% del texto original`
-      });
+    // Recomendaciones de IA si disponibles
+    if (this.aiSdkService && concepts.length > 0) {
+      try {
+        const aiRecommendations = await this.aiSdkService.getMapRecommendations({
+          concepts,
+          relationships
+        });
+        
+        if (aiRecommendations && aiRecommendations.length > 0) {
+          aiRecommendations.forEach(rec => {
+            recommendations.push({
+              type: 'ai_suggestion',
+              priority: rec.priority || 'media',
+              description: rec.description
+            });
+          });
+        }
+      } catch (error) {
+        console.warn(`Error al obtener recomendaciones de IA: ${error.message}`);
+      }
     }
     
     // Ordenar por prioridad
-    const priorityMap = {
-      'crítica': 0,
-      'alta': 1,
-      'media': 2,
-      'baja': 3
-    };
-    
-    recommendations.sort((a, b) => {
-      return priorityMap[a.priority] - priorityMap[b.priority];
-    });
-    
-    return recommendations;
+    const priorityOrder = { 'alta': 0, 'media': 1, 'baja': 2 };
+    return recommendations.sort((a, b) => priorityOrder[a.priority] - priorityOrder[b.priority]);
   }
   
   /**
-   * Agrupa elementos por una propiedad y cuenta cuántos hay en cada grupo
+   * Genera un resumen del mapa conceptual
+   * @param {Array} concepts - Conceptos del mapa
+   * @param {Array} relationships - Relaciones del mapa
+   * @param {Object} statistics - Estadísticas del mapa
+   * @param {Object} verification - Resultados de verificación
+   * @param {string} language - Idioma del mapa
+   * @returns {Promise<string>} - Resumen generado
    * @private
    */
-  _groupByProperty(items, property) {
-    const groups = {};
+  async _generateMapSummary(concepts, relationships, statistics, verification, language) {
+    // Obtener conceptos principales basados en importancia
+    const mainConcepts = concepts
+      .filter(c => c.importance >= 0.7)
+      .sort((a, b) => b.importance - a.importance)
+      .slice(0, 5);
     
-    for (const item of items) {
-      const value = item[property];
+    // Bases para el resumen
+    let summary = `El mapa conceptual generado contiene ${concepts.length} conceptos interconectados mediante ${relationships.length} relaciones. `;
+    
+    // Añadir información sobre conceptos principales
+    if (mainConcepts.length > 0) {
+      summary += `Los conceptos principales identificados son: ${mainConcepts.map(c => c.name).join(', ')}. `;
+    }
+    
+    // Añadir información sobre estructura jerárquica
+    const levelCount = statistics.counts.hierarchyLevels;
+    if (levelCount > 1) {
+      summary += `La estructura se organiza en ${levelCount} niveles jerárquicos. `;
+    }
+    
+    // Añadir información sobre enriquecimiento
+    const definitionPercentage = Math.round((statistics.enrichment.conceptsWithDefinition / concepts.length) * 100);
+    if (definitionPercentage > 0) {
+      summary += `El ${definitionPercentage}% de los conceptos incluyen definiciones detalladas. `;
+    }
+    
+    // Añadir resultados de verificación
+    if (!verification.passed) {
+      summary += `La verificación ha identificado ${verification.issues.length} problemas y ${verification.warnings.length} advertencias que podrían afectar la calidad del mapa. `;
+    } else {
+      summary += `La verificación de integridad ha sido exitosa. `;
+    }
+    
+    // Añadir información sobre tipos de relaciones si hay diversidad
+    const relationshipTypes = Object.keys(statistics.distribution.byType || {});
+    if (relationshipTypes.length > 1) {
+      const topTypes = relationshipTypes
+        .sort((a, b) => (statistics.distribution.byType[b] || 0) - (statistics.distribution.byType[a] || 0))
+        .slice(0, 3);
       
-      if (value !== undefined && value !== null) {
-        // Convertir a string para usarlo como clave
-        const key = String(value);
+      summary += `Los tipos de relación más comunes son: ${topTypes.join(', ')}. `;
+    }
+    
+    // Si hay AI SDK disponible, generar una conclusión más semántica
+    if (this.aiSdkService) {
+      try {
+        const enhancedSummary = await this.aiSdkService.generateMapSummary({
+          concepts: mainConcepts,
+          totalConcepts: concepts.length,
+          totalRelationships: relationships.length,
+          hasPassed: verification.passed,
+          language
+        });
         
-        if (!groups[key]) {
-          groups[key] = 0;
+        if (enhancedSummary && enhancedSummary.length > 0) {
+          summary = enhancedSummary;
         }
-        
-        groups[key]++;
+      } catch (error) {
+        console.warn(`Error al generar resumen con IA: ${error.message}`);
       }
     }
     
-    return groups;
-  }
-  
-  /**
-   * Cuenta elementos con un valor específico para una propiedad
-   * @private
-   */
-  _countByProperty(items, property, value) {
-    return items.filter(item => item[property] === value).length;
-  }
-  
-  /**
-   * Estima qué porcentaje del texto original está cubierto por los conceptos
-   * @private
-   */
-  _estimateTextCoverage(concepts, originalText) {
-    if (!originalText || originalText.length === 0) {
-      return 0;
+    // Limitar longitud si es necesario
+    if (summary.length > this.conclusionOptions.maxSummaryLength) {
+      summary = summary.substring(0, this.conclusionOptions.maxSummaryLength) + '...';
     }
     
-    // Simplificado: verificamos cuántos conceptos aparecen en el texto
-    let coveredConcepts = 0;
-    const totalConcepts = concepts.length;
-    
-    for (const concept of concepts) {
-      const conceptName = concept.name.toLowerCase();
-      if (originalText.toLowerCase().includes(conceptName)) {
-        coveredConcepts++;
-      }
-    }
-    
-    // Calcular cobertura basada en la proporción de conceptos que aparecen en el texto
-    // Esto es una aproximación simple
-    return totalConcepts > 0 ? coveredConcepts / totalConcepts : 0;
+    return summary;
   }
 }
 

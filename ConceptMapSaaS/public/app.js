@@ -14,6 +14,73 @@ document.addEventListener('DOMContentLoaded', function() {
     let markmapInstance = null;
     let currentMapData = null;
     
+    // Exponer funciones y variables importantes en el objeto window para acceso global
+    window.currentMapData = null;
+    window.renderMarkmap = renderMarkmap;
+    window.renderMermaid = renderMermaid;
+    window.renderD3ConceptMap = renderD3ConceptMap;
+    window.renderModularConceptMap = renderModularConceptMap;
+    window.renderConceptsAsTable = renderConceptsAsTable;
+    
+    // Añadir funcionalidad para los botones de formato
+    const formatButtons = document.querySelectorAll('#visualization-controls button');
+    if (formatButtons.length > 0) {
+        console.log('Inicializando botones de formato de visualización...');
+        
+        formatButtons.forEach(button => {
+            button.addEventListener('click', function() {
+                const format = this.getAttribute('data-format');
+                
+                // Resaltar el botón activo
+                formatButtons.forEach(btn => {
+                    btn.classList.remove('active', 'btn-primary');
+                    btn.classList.add('btn-outline-primary');
+                });
+                this.classList.add('active', 'btn-primary');
+                this.classList.remove('btn-outline-primary');
+                
+                // Si hay un mapa actual, intentar cambiar su visualización
+                if (window.currentMapData) {
+                    const container = document.getElementById('diagramContainer');
+                    
+                    // Mostrar indicador de carga
+                    container.classList.add('loading');
+                    container.innerHTML = '';
+                    
+                    // Determinar qué función de renderizado usar según el formato
+                    setTimeout(() => {
+                        try {
+                            if (format === 'markmap') {
+                                renderMarkmap(window.currentMapData, container);
+                            } else if (format === 'mermaid') {
+                                renderMermaid(window.currentMapData, container);
+                            } else if (format === 'd3') {
+                                renderD3ConceptMap(window.currentMapData, container);
+                            } else {
+                                throw new Error(`Formato "${format}" no soportado`);
+                            }
+                        } catch (error) {
+                            console.error('Error al cambiar formato:', error);
+                            container.innerHTML = `
+                                <div class="alert alert-danger">
+                                    <h4>Error al cambiar visualización</h4>
+                                    <p>${error.message}</p>
+                                    <p>Intente recargar la página o utilice otro formato de visualización.</p>
+            </div>
+        `;
+                        } finally {
+                            container.classList.remove('loading');
+                        }
+                    }, 100);
+                } else {
+                    console.log('No hay datos de mapa conceptual para visualizar');
+                }
+            });
+        });
+    } else {
+        console.warn('No se encontraron botones de formato de visualización');
+    }
+
     // Cambio de pestañas
     tabBtns.forEach(btn => {
         btn.addEventListener('click', () => {
@@ -37,40 +104,47 @@ document.addEventListener('DOMContentLoaded', function() {
     generateBtn.addEventListener('click', async () => {
         try {
             // Obtener el texto del área de texto
-            const text = textInput.value.trim();
-            
+        const text = textInput.value.trim();
+        
             // Validar que haya texto
-            if (!text) {
-                showNotification('Por favor, ingresa un texto para generar el mapa conceptual', 'error');
-                return;
-            }
-            
-            // Mostrar indicador de carga
-            showLoading(true);
-            
-            // Opciones para la generación del mapa
+        if (!text) {
+            showNotification('Por favor, ingresa un texto para generar el mapa conceptual', 'error');
+            return;
+        }
+        
+            // Desactivar el botón durante el procesamiento
+            generateBtn.disabled = true;
+            generateBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Procesando...';
+        
+        // Mostrar indicador de carga
+        showLoading(true);
+        
+            // Obtener opciones de configuración
             const options = {
                 stages: {
-                    organization: document.getElementById('stage1').checked,
-                    reasoning: document.getElementById('stage2').checked,
-                    enrichment: document.getElementById('stage3').checked,
-                    validation: document.getElementById('stage4').checked,
-                    aesthetics: document.getElementById('stage5').checked
+                    organization: document.getElementById('stage1')?.checked ?? true,
+                    reasoning: document.getElementById('stage2')?.checked ?? true,
+                    enrichment: document.getElementById('stage3')?.checked ?? true,
+                    validation: document.getElementById('stage4')?.checked ?? true,
+                    aesthetics: document.getElementById('stage5')?.checked ?? true
                 },
-                visualStyle: document.getElementById('visual-style').value,
-                complexity: document.getElementById('complexity').value
+                visualStyle: document.getElementById('visual-style')?.value || 'professional',
+                complexity: document.getElementById('complexity')?.value || 3
             };
             
             console.log('Opciones de configuración:', options);
-            console.log('Texto a procesar (primeros 50 caracteres):', text ? text.substring(0, 50) : 'No hay texto');
+            console.log('Texto a procesar (primeros 50 caracteres):', 
+                text ? text.substring(0, 50) + '...' : 'No hay texto');
             
-            // Simular procesamiento por etapas (en una implementación real, esto sería una llamada a la API)
+            // Simular procesamiento por etapas para UI
             await simulateProcessing(options);
             
-            console.log('Iniciando llamada a la API...');
-            
             // Llamada a la API para generar el mapa conceptual
-            const response = await fetch('/api/generate-map', {
+            console.log('Iniciando llamada a la API...');
+            let response;
+            
+            try {
+                response = await fetch('/api/generate-map', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
@@ -79,63 +153,142 @@ document.addEventListener('DOMContentLoaded', function() {
             });
             
             console.log('Respuesta API status:', response.status);
-            
-            if (!response.ok) {
-                const errorText = await response.text();
-                console.error('Error en la respuesta:', errorText);
-                throw new Error(`Error al generar el mapa conceptual: ${response.status} ${errorText}`);
+            } catch (networkError) {
+                console.error('Error de red al contactar la API:', networkError);
+                throw new Error('No se pudo conectar con el servidor. Verifica tu conexión a internet.');
             }
             
-            const data = await response.json();
-            console.log('Datos recibidos:', data);
+            // Manejar errores de la API
+            if (!response.ok) {
+                let errorMessage = `Error del servidor: ${response.status}`;
+                try {
+                    const errorData = await response.json();
+                    errorMessage = errorData.error || errorMessage;
+                } catch (e) {
+                    // Si no podemos parsear como JSON, intentamos obtener texto
+                    try {
+                        errorMessage = await response.text();
+                    } catch (textError) {
+                        // Si todo falla, mantenemos el mensaje original
+                    }
+                }
+                throw new Error(errorMessage);
+            }
             
-            if (data.success) {
-                // Determinar la estructura de datos correcta
-                let contentData = null;
-                
-                if (data.result.content) {
-                    // La API devolvió la estructura esperada directamente
-                    contentData = data.result.content;
-                    console.log('Usando contenido directo de result.content');
-                } else if (data.result) {
-                    // La API devolvió result pero sin .content
-                    contentData = data.result;
-                    console.log('Usando contenido de result');
-                }
-                
-                if (!contentData) {
-                    console.error('No se pudo determinar la estructura del contenido');
-                    contentData = {
-                        concepts: [],
-                        relationships: [],
-                        title: "Error: No se pudo cargar el mapa"
-                    };
-                }
-                
-                // Guardar los datos del mapa
-                currentMapData = contentData;
-                
-                // Registro detallado para depuración
-                console.log('Contenido del mapa conceptual:', {
-                    conceptCount: contentData.concepts ? contentData.concepts.length : 0,
-                    relationshipCount: contentData.relationships ? contentData.relationships.length : 0
+            // Procesar datos recibidos
+            let data;
+            try {
+                data = await response.json();
+                console.log('Datos recibidos (resumidos):', {
+                    success: data.success,
+                    resultKeys: data.result ? Object.keys(data.result) : 'No hay result',
+                    hasContent: data.result?.content ? true : false
                 });
-                
+            } catch (parseError) {
+                console.error('Error al parsear la respuesta JSON:', parseError);
+                throw new Error('La respuesta del servidor no es válida. Inténtalo de nuevo más tarde.');
+            }
+            
+            // Verificar si la respuesta es exitosa
+            if (!data.success) {
+                console.error('La API reportó un error:', data.error);
+                throw new Error(data.error || 'Error desconocido al procesar el texto');
+            }
+            
+            // Determinar la estructura de datos correcta
+            let contentData = null;
+            
+            if (data.result && data.result.content) {
+                // La API devolvió la estructura esperada directamente
+                contentData = data.result.content;
+                console.log('Usando contenido directo de result.content');
+            } else if (data.result) {
+                // La API devolvió result pero sin .content
+                contentData = data.result;
+                console.log('Usando contenido de result');
+            }
+            
+            if (!contentData) {
+                console.error('No se pudo determinar la estructura del contenido');
+                throw new Error('Datos incompletos o en formato incorrecto');
+            }
+            
+            // Validar que contentData tenga la estructura mínima necesaria
+            if (!contentData.concepts || !Array.isArray(contentData.concepts)) {
+                console.error('Los datos no contienen conceptos válidos', contentData);
+                contentData = {
+                    concepts: [],
+                    relationships: [],
+                    title: "Error: Datos incompletos"
+                };
+            }
+            
+            // Guardar los datos del mapa
+            currentMapData = contentData;
+            
+            // Asegurar accesibilidad global para el selector de formato de visualización
+            window.currentMapData = contentData;
+            
+            // Seleccionar el formato de visualización más apropiado basado en la complejidad
+            let visualizationFormat = 'markmap'; // Formato predeterminado
+            const conceptCount = contentData.concepts?.length || 0;
+            
+            if (conceptCount > 50) {
+                visualizationFormat = 'd3'; // Para mapas muy complejos
+            } else if (conceptCount > 20) {
+                visualizationFormat = 'mermaid'; // Para mapas de complejidad media
+            }
+            
+            // Seleccionar el botón de formato correspondiente
+            const formatButton = document.querySelector(`#visualization-controls button[data-format="${visualizationFormat}"]`);
+            if (formatButton) {
+                // Simular clic en el botón para activar ese formato
+                formatButton.click();
+            } else {
+                // Renderizar directamente si no se encontró el botón
+                try {
                 // Renderizar el mapa conceptual
-                await renderModularConceptMap(contentData);
+                    await renderModularConceptMap(contentData);
+                } catch (renderError) {
+                    console.error('Error al renderizar el mapa:', renderError);
+                    throw new Error(`Error al visualizar el mapa: ${renderError.message}`);
+                }
+            }
                 
                 // Cambiar a la pestaña de salida
                 document.querySelector('[data-tab="output"]').click();
+            
+            // Activar los botones de acción
+            document.getElementById('download-btn').disabled = false;
+            document.getElementById('share-btn').disabled = false;
+            document.getElementById('edit-btn').disabled = false;
                 
                 showNotification('Mapa conceptual generado exitosamente', 'success');
-            } else {
-                console.error('Error en datos recibidos:', data.error || 'Error desconocido');
-                throw new Error(data.error || 'Error desconocido');
-            }
         } catch (error) {
-            console.error('Error:', error);
+            console.error('Error al generar el mapa conceptual:', error);
+            
+            // Mostrar una notificación de error amigable
+            const errorContainer = document.getElementById('diagramContainer');
+            if (errorContainer) {
+                errorContainer.innerHTML = `
+                    <div class="alert alert-danger">
+                        <h4><i class="fas fa-exclamation-triangle"></i> Error al generar el mapa conceptual</h4>
+                        <p>${error.message}</p>
+                        <button class="btn btn-sm btn-outline-danger mt-2" onclick="document.querySelector('[data-tab=\\'input\\']').click()">
+                            Volver al editor
+                        </button>
+                    </div>
+                `;
+                
+                // Cambiar a la pestaña de salida para mostrar el error
+                document.querySelector('[data-tab="output"]').click();
+            }
+            
             showNotification(error.message, 'error');
         } finally {
+            // Restaurar el botón y ocultar el indicador de carga
+            generateBtn.disabled = false;
+            generateBtn.innerHTML = 'Generar Mapa Conceptual';
             showLoading(false);
         }
     });
@@ -194,713 +347,153 @@ document.addEventListener('DOMContentLoaded', function() {
         try {
             // Si no se proporciona contenedor, usar el predeterminado
             const targetContainer = container || document.getElementById('diagramContainer');
-            targetContainer.innerHTML = '';
-            
-            let markdownContent = '';
-            
-            // Verificar si los datos son del formato antiguo o nuevo
-            if (typeof data === 'string') {
-                // Formato antiguo - contenido markdown directo
-                markdownContent = data;
-            } else {
-                // Formato nuevo - objeto con conceptos y relaciones
-                markdownContent = convertConceptsToMarkdown(data);
+            if (!targetContainer) {
+                throw new Error('No se encontró el contenedor para el mapa');
             }
             
-            // Crear un elemento para Markmap
+            // Limpiar el contenedor antes de renderizar
+            targetContainer.innerHTML = '';
+            
+            // Crear el contenedor específico para markmap
             const markmapContainer = document.createElement('div');
-            markmapContainer.style.width = '100%';
-            markmapContainer.style.height = '70vh';
-            markmapContainer.style.overflow = 'hidden';
+            markmapContainer.className = 'markmap';
             targetContainer.appendChild(markmapContainer);
             
-            // Verificar que markmap está correctamente cargado
-            if (!window.markmap) {
-                console.error('La biblioteca markmap no está disponible');
-                throw new Error('No se pudo cargar la biblioteca markmap');
-            }
-            
-            // Verificar que los componentes necesarios existen
-            if (!window.markmap.Markmap) {
-                console.error('Markmap.Markmap no está disponible', window.markmap);
-                throw new Error('Componente Markmap no disponible');
-            }
-            
-            // Inicializar Markmap y obtener los componentes
-            const { Markmap, loadCSS, loadJS } = window.markmap;
-            
-            // Verificar que la función transform existe
-            if (!window.markmap.transform || typeof window.markmap.transform.transform !== 'function') {
-                console.error('window.markmap.transform no está disponible o no es una función');
-                console.log('Propiedades disponibles en window.markmap:', Object.keys(window.markmap));
-                
-                // Intentar cargar transform de una manera alternativa
-                if (!window.markmap.transform) {
-                    window.markmap.transform = {
-                        transform: function(content) {
-                            return {
-                                root: {
-                                    t: markdownContent,
-                                    d: 0,
-                                    v: '',
-                                    c: [{
-                                        t: 'Error: No se pudo transformar el contenido',
-                                        d: 1,
-                                        v: '',
-                                        c: []
-                                    }]
-                                }
-                            };
-                        }
-                    };
-                    console.log('Se ha creado un objeto transform alternativo');
-                }
-            }
-            
-            // Crear el SVG para Markmap
-            const markmapSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-            markmapSvg.style.width = '100%';
-            markmapSvg.style.height = '100%';
-            markmapContainer.appendChild(markmapSvg);
-            
-            // Intentar procesar el markdown con transform
-            let transformedData;
-            try {
-                transformedData = window.markmap.transform.transform(markdownContent);
-            } catch (transformError) {
-                console.error('Error al transformar el contenido markdown:', transformError);
-                
-                // Proporcionar datos transformados manualmente en caso de error
-                transformedData = {
-                    root: {
-                        t: 'Mapa Conceptual',
-                        d: 0,
-                        v: '',
-                        c: [{
-                            t: 'Error: No se pudo transformar el contenido',
-                            d: 1,
-                            v: 'Verifica que la biblioteca markmap está correctamente cargada',
-                            c: []
-                        }]
-                    }
-                };
-            }
-            
-            // Renderizar Markmap
-            try {
-                const mm = Markmap.create(markmapSvg, {
-                    embedAssets: false,
-                    duration: 500,
-                    nodeFont: 'var(--main-font, "Arial")',
-                    zoom: true,
-                    pan: true
-                });
-                
-                mm.setData(transformedData);
-                mm.fit();
-                
-                return mm; // Devolver la instancia de markmap para posibles interacciones futuras
-            } catch (renderError) {
-                console.error('Error al renderizar el mapa:', renderError);
-                targetContainer.innerHTML = `<div class="error-message" style="padding: 20px; color: red; text-align: center;">
-                    <h3>Error al renderizar el mapa conceptual</h3>
-                    <p>${renderError.message}</p>
-                    <p>Intenta recargar la página o usa otro formato de visualización</p>
-                </div>`;
-                throw renderError;
-            }
-        } catch (error) {
-            console.error('Error al renderizar markmap:', error);
-            throw error;
-        }
-    }
-    
-    function convertConceptsToMarkdown(data) {
-        // Función para convertir el objeto de conceptos en formato markdown
-        let markdown = '# ' + (data.title || 'Mapa Conceptual') + '\n\n';
-        
-        if (data.concepts && data.concepts.length > 0) {
-            // Ordenar conceptos por nivel jerárquico
-            const sortedConcepts = [...data.concepts].sort((a, b) => 
-                (a.hierarchyLevel || 0) - (b.hierarchyLevel || 0)
-            );
-            
-            // Función recursiva para generar markdown jerárquico
-            function addConceptsRecursively(parentId = null, level = 1) {
-                const children = sortedConcepts.filter(c => 
-                    (!parentId && !c.parentId) || // Conceptos raíz
-                    (c.parentId === parentId)     // Hijos directos
-                );
-                
-                let result = '';
-                for (const concept of children) {
-                    const prefix = '#'.repeat(Math.min(level + 1, 6)) + ' ';
-                    result += prefix + concept.name + '\n';
-                    
-                    // Añadir descripción si existe
-                    if (concept.description) {
-                        result += concept.description + '\n\n';
-                    }
-                    
-                    // Añadir enlaces a otros conceptos si existen relaciones
-                    const relationships = data.relationships?.filter(r => 
-                        r.sourceId === concept.id || r.targetId === concept.id
-                    );
-                    
-                    if (relationships && relationships.length > 0) {
-                        result += '- **Relaciones:**\n';
-                        for (const rel of relationships) {
-                            const otherConcept = sortedConcepts.find(c => 
-                                (rel.sourceId === concept.id && c.id === rel.targetId) || 
-                                (rel.targetId === concept.id && c.id === rel.sourceId)
-                            );
-                            if (otherConcept) {
-                                result += `  - ${rel.type || 'Relacionado con'}: ${otherConcept.name}\n`;
-                            }
-                        }
-                        result += '\n';
-                    }
-                    
-                    // Recursivamente añadir hijos
-                    const childrenMd = addConceptsRecursively(concept.id, level + 1);
-                    if (childrenMd) {
-                        result += childrenMd;
-                    }
-                }
-                return result;
-            }
-            
-            markdown += addConceptsRecursively();
-        }
-        
-        return markdown;
-    }
-
-    async function renderMermaid(data, container) {
-        try {
-            const targetContainer = container || document.getElementById('diagramContainer');
-            targetContainer.innerHTML = '';
-            
-            // Crear un contenedor para el diagrama Mermaid
-            const mermaidContainer = document.createElement('div');
-            mermaidContainer.className = 'mermaid-diagram';
-            mermaidContainer.style.width = '100%';
-            mermaidContainer.style.height = '70vh';
-            mermaidContainer.style.overflow = 'auto';
-            targetContainer.appendChild(mermaidContainer);
-            
-            // Convertir conceptos a formato Mermaid
-            const mermaidDef = convertConceptsToMermaid(data);
-            
-            // Crear el contenedor para el código Mermaid
-            const mermaidDiv = document.createElement('div');
-            mermaidDiv.className = 'mermaid';
-            mermaidDiv.textContent = mermaidDef;
-            mermaidContainer.appendChild(mermaidDiv);
-            
-            // Inicializar y renderizar Mermaid
-            await window.mermaid.initialize({
-                startOnLoad: true,
-                theme: 'default',
-                flowchart: {
-                    useMaxWidth: false,
-                    htmlLabels: true,
-                    curve: 'cardinal'
-                }
-            });
-            
-            await window.mermaid.run();
-        } catch (error) {
-            console.error('Error al renderizar mermaid:', error);
-            throw error;
-        }
-    }
-
-    function convertConceptsToMermaid(data) {
-        // Construir diagrama Mermaid en formato flowchart
-        let mermaid = 'flowchart TB\n';
-        
-        // Añadir nodos
-        if (data.concepts && data.concepts.length > 0) {
-            for (const concept of data.concepts) {
-                // Formato del nodo basado en importancia
-                let nodeStyle = '';
-                if (concept.importance === 'high') {
-                    nodeStyle = '([" ' + concept.name + ' "]):::important';
-                } else if (concept.importance === 'medium') {
-                    nodeStyle = '[" ' + concept.name + ' "]:::medium';
-                } else {
-                    nodeStyle = '(" ' + concept.name + ' "):::standard';
-                }
-                
-                mermaid += `    ${concept.id}${nodeStyle}\n`;
-            }
-            
-            // Añadir relaciones
-            if (data.relationships && data.relationships.length > 0) {
-                mermaid += '\n    %% Relationships\n';
-                for (const rel of data.relationships) {
-                    // Solo incluir un subconjunto de relaciones para no saturar
-                    if (Math.random() > 0.7) continue; // Incluir solo ~30% de relaciones para mayor claridad
-                    
-                    const linkStyle = rel.type === 'includes' ? '-->' : '---';
-                    const linkLabel = rel.type ? "|" + rel.type + "|" : "";
-                    mermaid += `    ${rel.sourceId}${linkStyle}${linkLabel}${rel.targetId}\n`;
-                }
-            }
-            
-            // Añadir estilos
-            mermaid += '\n    %% Styles\n';
-            mermaid += '    classDef important fill:#f9d5e5,stroke:#333,stroke-width:2px;\n';
-            mermaid += '    classDef medium fill:#eeeeee,stroke:#666;\n';
-            mermaid += '    classDef standard fill:#e3f2fd,stroke:#64b5f6;\n';
-        }
-        
-        return mermaid;
-    }
-
-    async function renderD3ConceptMap(data, container) {
-        try {
-            const targetContainer = container || document.getElementById('diagramContainer');
-            targetContainer.innerHTML = '';
-            
-            // Crear contenedor para la visualización D3
-            const d3Container = document.createElement('div');
-            d3Container.id = 'd3-concept-map';
-            d3Container.style.width = '100%';
-            d3Container.style.height = '70vh';
-            targetContainer.appendChild(d3Container);
-            
-            // Preparar datos para D3
-            const d3Data = prepareD3Data(data);
-            
-            // Crear SVG para D3
-            const d3Svg = d3.select('#d3-concept-map')
-                .append('svg')
-                .attr('width', '100%')
-                .attr('height', '100%')
-                .attr('viewBox', '0 0 1000 800')
-                .append('g')
-                .attr('transform', 'translate(500, 400)');
-            
-            // Simulación de fuerzas para grafo
-            const simulation = d3.forceSimulation(d3Data.nodes)
-                .force('link', d3.forceLink(d3Data.links).id(d => d.id).distance(100))
-                .force('charge', d3.forceManyBody().strength(-200))
-                .force('center', d3.forceCenter(0, 0))
-                .force('collision', d3.forceCollide().radius(50));
-            
-            // Añadir links
-            const link = d3Svg.append('g')
-                .selectAll('line')
-                .data(d3Data.links)
-                .enter()
-                .append('line')
-                .attr('stroke', '#999')
-                .attr('stroke-opacity', 0.6)
-                .attr('stroke-width', d => Math.sqrt(d.value || 1));
-            
-            // Añadir nodos
-            const node = d3Svg.append('g')
-                .selectAll('.node')
-                .data(d3Data.nodes)
-                .enter()
-                .append('g')
-                .attr('class', 'node')
-                .call(d3.drag()
-                    .on('start', dragstarted)
-                    .on('drag', dragged)
-                    .on('end', dragended));
-            
-            // Círculos para nodos
-            node.append('circle')
-                .attr('r', d => getNodeRadius(d))
-                .attr('fill', d => getNodeColor(d))
-                .attr('stroke', '#fff')
-                .attr('stroke-width', 1.5);
-            
-            // Texto para nodos
-            node.append('text')
-                .text(d => d.name)
-                .attr('x', 0)
-                .attr('y', 4)
-                .attr('text-anchor', 'middle')
-                .style('font-size', '12px')
-                .style('font-family', 'var(--main-font, Arial)')
-                .style('fill', d => getTextColor(d))
-                .style('pointer-events', 'none');
-            
-            // Funciones de ayuda para D3
-            function dragstarted(event, d) {
-                if (!event.active) simulation.alphaTarget(0.3).restart();
-                d.fx = d.x;
-                d.fy = d.y;
-            }
-            
-            function dragged(event, d) {
-                d.fx = event.x;
-                d.fy = event.y;
-            }
-            
-            function dragended(event, d) {
-                if (!event.active) simulation.alphaTarget(0);
-                d.fx = null;
-                d.fy = null;
-            }
-            
-            // Actualizar posiciones
-            simulation.on('tick', () => {
-                link
-                    .attr('x1', d => d.source.x)
-                    .attr('y1', d => d.source.y)
-                    .attr('x2', d => d.target.x)
-                    .attr('y2', d => d.target.y);
-                
-                node
-                    .attr('transform', d => `translate(${d.x}, ${d.y})`);
-            });
-            
-            // Funciones de ayuda para estilos
-            function getNodeRadius(d) {
-                if (d.importance === 'high') return 25;
-                if (d.importance === 'medium') return 18;
-                return 12;
-            }
-            
-            function getNodeColor(d) {
-                if (d.importance === 'high') return '#ff7043';
-                if (d.importance === 'medium') return '#4fc3f7';
-                return '#81c784';
-            }
-            
-            function getTextColor(d) {
-                return d.importance === 'high' ? '#fff' : '#333';
-            }
-            
-        } catch (error) {
-            console.error('Error al renderizar D3:', error);
-            throw error;
-        }
-    }
-
-    function prepareD3Data(data) {
-        // Convertir datos para D3
-        const nodes = data.concepts.map(concept => ({
-            id: concept.id,
-            name: concept.name,
-            importance: concept.importance || 'low',
-            group: concept.category || 1,
-            level: concept.hierarchyLevel || 1
-        }));
-        
-        const links = (data.relationships || []).map(rel => ({
-            source: rel.sourceId,
-            target: rel.targetId,
-            value: 1,
-            type: rel.type || 'related'
-        }));
-        
-        return { nodes, links };
-    }
-    
-    // Función para mostrar notificaciones
-    function showNotification(message, type = 'info', duration = 5000) {
-        const notification = document.createElement('div');
-        notification.className = `notification ${type}`;
-        
-        // Permitir HTML para mensajes más ricos
-        notification.innerHTML = message;
-        
-        // Añadir icono según el tipo de notificación
-        const iconMap = {
-            'info': '&#8505;', // Símbolo de información
-            'success': '&#10004;', // Marca de verificación
-            'warning': '&#9888;', // Señal de advertencia
-            'error': '&#10060;' // Símbolo de error
-        };
-        
-        if (iconMap[type]) {
-            const icon = document.createElement('span');
-            icon.className = 'notification-icon';
-            icon.innerHTML = iconMap[type];
-            notification.prepend(icon);
-        }
-        
-        // Añadir botón para cerrar
-        const closeBtn = document.createElement('span');
-        closeBtn.className = 'notification-close';
-        closeBtn.innerHTML = '&times;';
-        closeBtn.onclick = function() {
-            notification.classList.remove('show');
-            setTimeout(() => notification.remove(), 300);
-        };
-        notification.appendChild(closeBtn);
-        
-        document.body.appendChild(notification);
-        
-        // Mostrar la notificación
-        setTimeout(() => {
-            notification.classList.add('show');
-        }, 10);
-        
-        // Ocultar después de un tiempo (si no es error)
-        if (type !== 'error' || duration > 0) {
-            setTimeout(() => {
-                notification.classList.remove('show');
-                setTimeout(() => {
-                    notification.remove();
-                }, 300);
-            }, duration);
-        }
-        
-        return notification; // Devolver referencia para manipulación adicional
-    }
-    
-    // Función para mostrar/ocultar indicador de carga
-    function showLoading(show) {
-        // Si ya existe un loader, eliminarlo
-        const existingLoader = document.querySelector('.loader-container');
-        if (existingLoader) {
-            document.body.removeChild(existingLoader);
-        }
-        
-        if (show) {
-            // Crear y mostrar el loader
-            const loaderContainer = document.createElement('div');
-            loaderContainer.className = 'loader-container';
-            
-            const loader = document.createElement('div');
-            loader.className = 'loader';
-            
-            const message = document.createElement('p');
-            message.textContent = 'Procesando texto...';
-            
-            loaderContainer.appendChild(loader);
-            loaderContainer.appendChild(message);
-            document.body.appendChild(loaderContainer);
-        }
-    }
-    
-    // Función para simular el procesamiento por etapas
-    async function simulateProcessing(options) {
-        const stages = [
-            { name: 'Organización y Jerarquía', enabled: options.stages.organization, time: 500 },
-            { name: 'Razonamiento y Comprensión', enabled: options.stages.reasoning, time: 700 },
-            { name: 'Enriquecimiento Semántico', enabled: options.stages.enrichment, time: 600 },
-            { name: 'Validación y Verificación', enabled: options.stages.validation, time: 400 },
-            { name: 'Estética Adaptativa', enabled: options.stages.aesthetics, time: 300 }
-        ];
-        
-        // Actualizar mensaje del loader para cada etapa
-        for (const stage of stages) {
-            if (stage.enabled) {
-                const loaderMessage = document.querySelector('.loader-container p');
-                if (loaderMessage) {
-                    loaderMessage.textContent = `Procesando: ${stage.name}...`;
-                }
-                
-                // Simular tiempo de procesamiento
-                await new Promise(resolve => setTimeout(resolve, stage.time));
-            }
-        }
-    }
-    
-    // Añadir estilos para notificaciones y loader
-    const style = document.createElement('style');
-    style.textContent = `
-        .notification {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            padding: 12px 20px;
-            border-radius: 4px;
-            color: white;
-            font-weight: 500;
-            z-index: 1000;
-            transform: translateY(-100px);
-            opacity: 0;
-            transition: all 0.3s ease;
-        }
-        
-        .notification.show {
-            transform: translateY(0);
-            opacity: 1;
-        }
-        
-        .notification.success {
-            background-color: #10b981;
-        }
-        
-        .notification.error {
-            background-color: #ef4444;
-        }
-        
-        .notification.info {
-            background-color: #3b82f6;
-        }
-        
-        .loader-container {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-color: rgba(0, 0, 0, 0.5);
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            z-index: 1000;
-        }
-        
-        .loader {
-            width: 48px;
-            height: 48px;
-            border: 5px solid #fff;
-            border-bottom-color: #4f46e5;
-            border-radius: 50%;
-            animation: rotation 1s linear infinite;
-            margin-bottom: 16px;
-        }
-        
-        .loader-container p {
-            color: white;
-            font-weight: 500;
-        }
-        
-        @keyframes rotation {
-            0% {
-                transform: rotate(0deg);
-            }
-            100% {
-                transform: rotate(360deg);
-            }
-        }
-    `;
-    document.head.appendChild(style);
-    
-    // Cargar un ejemplo inicial de mapa conceptual
-    const exampleMarkmap = `
-# Mapa Conceptual
-## Organización y Jerarquía
-### LangGraph
-- Columna vertebral de jerarquía lógica
-- Define flujos de pensamiento
-### Penrose
-- Arquitecto visual
-- Mantiene orden y simetría
-## Razonamiento y Comprensión
-### DeepSeek API
-- Procesamiento semántico
-### GraphRAG
-- Conversión a grafos de conocimiento
-## Enriquecimiento Semántico
-### Semantic Kernel
-- Enriquece con conocimiento
-### ConceptNet
-- Red semántica de conocimiento
-## Validación y Verificación
-### Arguflow
-- Validación de relaciones lógicas
-### Trieve
-- Verificación con evidencia
-## Estética Adaptativa
-### Markmap
-- Mapas interactivos en Markdown
-### Open Props
-- Estilos adaptativos
-    `;
-    
-    // Renderizar el ejemplo inicial después de un breve retraso
-    setTimeout(() => {
-        currentMapData = exampleMarkmap;
-        renderMarkmap(exampleMarkmap);
-    }, 1000);
-
-    async function renderModularConceptMap(data) {
-        try {
-            console.log('Renderizando mapa conceptual modular:', data);
-            const container = document.getElementById('diagramContainer');
-            container.innerHTML = ''; // Limpiar contenedor existente
-            
-            // Si no hay datos o conceptos, mostrar mensaje
-            if (!data || !data.concepts || data.concepts.length === 0) {
-                container.innerHTML = '<div class="alert alert-warning">No se pudieron generar conceptos del texto proporcionado.</div>';
+            // Si no hay datos, mostrar un mensaje
+            if (!data) {
+                markmapContainer.innerHTML = '<div class="alert alert-warning">No hay datos disponibles para visualizar.</div>';
                 return;
             }
             
-            // Aplicar configuración estética del stage 5
-            if (data.aesthetics && data.aesthetics.visualStyle) {
-                applyVisualStyle(data.aesthetics.visualStyle);
+            console.log('Preparando datos para Markmap:', typeof data);
+            
+            // Convertir los datos al formato adecuado según su tipo
+            let markdownContent = '';
+            
+            if (typeof data === 'string') {
+                // Ya es una cadena, posiblemente markdown
+                markdownContent = data;
+            } else if (data.concepts && Array.isArray(data.concepts)) {
+                // Es un objeto con conceptos, convertir a markdown
+                markdownContent = convertConceptsToMarkdown(data.concepts, data.relationships || []);
+            } else {
+                // Intentar usar como está o convertir a string
+                markdownContent = JSON.stringify(data, null, 2);
             }
             
-            // Determinar el formato de visualización basado en la complejidad
-            let visualizationFormat = 'markmap'; // Predeterminado
+            // Parsear el markdown a una estructura de nodos para markmap
+            const markdownNodes = parseMarkdownToNodes(markdownContent);
             
-            if (data.concepts.length > 50) {
-                visualizationFormat = 'd3'; // Para mapas muy complejos
-            } else if (data.concepts.length > 20) {
-                visualizationFormat = 'mermaid'; // Para mapas de complejidad media
+            // Verificación de seguridad
+            if (!markdownNodes) {
+                throw new Error('No se pudo generar la estructura de nodos para el mapa');
             }
             
-            // Override con preferencia de usuario si existe
-            if (data.aesthetics && data.aesthetics.preferredFormat) {
-                visualizationFormat = data.aesthetics.preferredFormat;
-            }
+            // Crear el SVG para markmap
+            const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            svg.setAttribute('width', '100%');
+            svg.setAttribute('height', '100%');
+            markmapContainer.appendChild(svg);
             
-            // Renderizar según el formato elegido
-            try {
-                console.log('Intentando renderizar con formato:', visualizationFormat);
-                switch (visualizationFormat) {
-                    case 'markmap':
-                        await renderMarkmap(data, container);
-                        break;
-                    case 'mermaid':
-                        await renderMermaid(data, container);
-                        break;
-                    case 'd3':
-                        await renderD3ConceptMap(data, container);
-                        break;
-                    default:
-                        await renderMarkmap(data, container);
-                }
-            } catch (renderError) {
-                console.error('Error al renderizar con formato principal, intentando método alternativo:', renderError);
+            // Función para transformar la estructura de nodos al formato esperado por markmap
+            const transformNodeToMarkmap = (node) => {
+                if (!node) return null;
                 
-                // Intentar con un método alternativo si el principal falla
-                try {
-                    // Mostramos una tabla simple como método alternativo
-                    renderConceptsAsTable(data, container);
-                } catch (fallbackError) {
-                    console.error('Error en método alternativo de renderizado:', fallbackError);
-                    container.innerHTML = `
-                        <div class="alert alert-danger">
-                            <h4>Error al visualizar el mapa conceptual</h4>
-                            <p>No se pudo renderizar el mapa conceptual. Error: ${renderError.message}</p>
-                            <p>Detalles: ${fallbackError.message}</p>
-                        </div>
-                    `;
+                // Formato para markmap: { t: title, d: depth, v: value/content, c: children }
+                const markmapNode = {
+                    t: node.name || 'Sin título',
+                    d: 0, // Será ajustado más adelante
+                    v: node.content || '',
+                    c: []
+                };
+                
+                // Procesar hijos recursivamente
+                if (node.children && Array.isArray(node.children) && node.children.length > 0) {
+                    markmapNode.c = node.children
+                        .map(child => transformNodeToMarkmap(child))
+                        .filter(child => child !== null);
                 }
+                
+                return markmapNode;
+            };
+            
+            // Convertir la estructura de nodos al formato de markmap
+            const markmapTree = transformNodeToMarkmap(markdownNodes);
+            
+            // Función recursiva para ajustar las profundidades
+            const adjustDepths = (nodes, depth = 1) => {
+                if (!nodes) return;
+                
+                nodes.forEach(node => {
+                    node.d = depth;
+                    if (node.c && node.c.length > 0) {
+                        adjustDepths(node.c, depth + 1);
+                    }
+                });
+            };
+            
+            // Ajustar profundidades
+            if (markmapTree && markmapTree.c) {
+                adjustDepths([markmapTree], 1);
             }
             
-            // Mostrar estadísticas y conclusión si existen
-            if (data.conclusion) {
-                renderConclusion(data.conclusion);
+            // Configuración de markmap
+            const { Markmap, loadCSS, loadJS } = window.markmap;
+            
+            // Cargar estilos y scripts necesarios
+            const { styles, scripts } = window.markmap.getUsedAssets([markmapTree]);
+            if (styles) loadCSS(styles);
+            if (scripts) await loadJS(scripts);
+            
+            // Crear la instancia de markmap
+            const mm = Markmap.create(svg, {
+                autoFit: true,
+                color: (node) => {
+                    // Colores según nivel de profundidad
+                    const colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b'];
+                    return colors[(node.d - 1) % colors.length];
+                },
+                duration: 500,
+                maxWidth: 300,
+                paddingX: 30
+            }, [markmapTree]);
+            
+            // Agregar controles de zoom si está disponible la función
+            if (typeof addZoomControls === 'function') {
+                addZoomControls(svg, mm);
             }
             
-            // Activar botones de interacción
-            document.getElementById('download-btn').disabled = false;
-            document.getElementById('share-btn').disabled = false;
-            document.getElementById('edit-btn').disabled = false;
+            // Agregar tooltips si está disponible la función
+            if (typeof addNodeTooltips === 'function') {
+                addNodeTooltips(svg, data);
+            }
+            
+            // Guardar referencia a la instancia de markmap
+            targetContainer.markmapInstance = mm;
+            
+            return mm; // Devolver la instancia de markmap
             
         } catch (error) {
-            console.error('Error al renderizar mapa conceptual:', error);
-            const container = document.getElementById('diagramContainer');
-            container.innerHTML = `<div class="alert alert-danger">Error al visualizar el mapa conceptual: ${error.message}</div>`;
+            console.error('Error al renderizar markmap:', error);
+            
+            // Mostrar mensaje de error en el contenedor
+            if (container) {
+                container.innerHTML = `
+                    <div class="alert alert-danger">
+                        <h4>Error al visualizar el mapa conceptual</h4>
+                        <p>${error?.message || 'Error desconocido'}</p>
+                        <small>Consulta la consola del navegador para más detalles.</small>
+                    </div>
+                `;
+            }
+            
+            showNotification('Error al visualizar el mapa: ' + (error?.message || 'Error desconocido'), 'error');
         }
     }
 
     function applyVisualStyle(style) {
+        if (!style) return; // No aplicar si no hay estilo
+        
         const container = document.getElementById('diagramContainer');
         const rootElement = document.documentElement;
         
@@ -910,17 +503,17 @@ document.addEventListener('DOMContentLoaded', function() {
                 rootElement.style.setProperty('--node-color', '#e0e0e0');
                 rootElement.style.setProperty('--node-bg', '#2d2d2d');
                 rootElement.style.setProperty('--line-color', '#888');
-                container.classList.add('dark-theme');
+                container?.classList.add('dark-theme');
             } else if (style.theme === 'light') {
                 rootElement.style.setProperty('--node-color', '#333');
                 rootElement.style.setProperty('--node-bg', '#f5f5f5');
                 rootElement.style.setProperty('--line-color', '#666');
-                container.classList.add('light-theme');
+                container?.classList.add('light-theme');
             } else if (style.theme === 'colorful') {
                 rootElement.style.setProperty('--node-color', '#fff');
                 rootElement.style.setProperty('--node-bg', '#3498db');
                 rootElement.style.setProperty('--line-color', '#e74c3c');
-                container.classList.add('colorful-theme');
+                container?.classList.add('colorful-theme');
             }
         }
         
@@ -931,7 +524,7 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // Aplicar animaciones si están habilitadas
         if (style.animations === true) {
-            container.classList.add('animated-map');
+            container?.classList.add('animated-map');
         }
     }
 
@@ -1108,5 +701,350 @@ document.addEventListener('DOMContentLoaded', function() {
                 alert('No se pudo renderizar con el formato alternativo. Por favor, intenta recargar la página.');
             }
         });
+    }
+
+    // Función de fallback si falla la estructura de árbol
+    function fallbackForceSimulation(svg, data) {
+        console.log('Aplicando layout de fallback mejorado');
+        
+        // Asegurarnos de que los datos son válidos
+        if (!data || !data.nodes || data.nodes.length === 0) {
+            svg.append("text")
+                .attr("text-anchor", "middle")
+                .attr("x", 0)
+                .attr("y", 0)
+                .text("No hay datos suficientes para visualizar")
+                .style("font-size", "16px")
+                .style("fill", "#666");
+            return;
+        }
+        
+        // Encontrar el nodo raíz (nivel 1 o el primer nodo)
+        const rootNode = data.nodes.find(n => n.level === 1) || data.nodes[0];
+        
+        // Añadir marcador de flecha para los enlaces
+        svg.append('defs').append('marker')
+            .attr('id', 'arrowhead-fallback')
+            .attr('viewBox', '0 -5 10 10')
+            .attr('refX', 25) // Ajustado para evitar solapamiento con nodos
+            .attr('refY', 0)
+            .attr('orient', 'auto')
+            .attr('markerWidth', 8)
+            .attr('markerHeight', 8)
+            .attr('xoverflow', 'visible')
+            .append('svg:path')
+            .attr('d', 'M 0,-5 L 10,0 L 0,5')
+            .attr('fill', '#999')
+            .style('stroke', 'none');
+        
+        // Crear la simulación de fuerzas
+        const simulation = d3.forceSimulation(data.nodes)
+            // Fuerza para enlaces con distancia ajustada según importancia
+            .force('link', d3.forceLink(data.links)
+                .id(d => d.id)
+                .distance(d => {
+                    // Mayor distancia para enlaces menos importantes
+                    if (d.source.importance === 'high' && d.target.importance === 'high') return 130;
+                    if (d.source.importance === 'high' || d.target.importance === 'high') return 150;
+                    if (d.source.importance === 'medium' || d.target.importance === 'medium') return 170;
+                    return 190;
+                }))
+            // Fuerza repulsiva entre nodos, más fuerte para nodos importantes
+            .force('charge', d3.forceManyBody()
+                .strength(d => {
+                    if (d.id === rootNode.id) return -400; // Nodo raíz más repulsivo
+                    if (d.importance === 'high') return -250;
+                    if (d.importance === 'medium') return -180;
+                    return -130;
+                }))
+            .force('center', d3.forceCenter(0, 0))
+            // Prevenir solapamiento con radio basado en importancia
+            .force('collision', d3.forceCollide().radius(d => {
+                if (d.id === rootNode.id) return 60;
+                if (d.importance === 'high') return 45;
+                if (d.importance === 'medium') return 35;
+                return 25;
+            }))
+            // Fuerza vertical basada en nivel jerárquico
+            .force('y', d3.forceY().strength(0.1).y(d => {
+                if (d.id === rootNode.id) return -100; // Nodo raíz más arriba
+                return (d.level - 1) * 120 - 50;
+            }))
+            // Distribución radial para conceptos del mismo nivel
+            .force('x', d3.forceX().strength(0.05).x(d => {
+                if (d.id === rootNode.id) return 0; // Nodo raíz centrado
+                // Distribuir nodos en semicírculo basado en su nivel y orden alfabético
+                const angleOffset = (d.name.charCodeAt(0) % 26) / 26; // 0-1 basado en primera letra
+                const angle = (angleOffset * Math.PI) + Math.PI / 2;
+                const distance = 180 * d.level;
+                return Math.cos(angle) * distance;
+            }));
+        
+        // Crear contenedor para etiquetas de relación
+        const labelGroup = svg.append('g').attr('class', 'relationship-labels');
+        
+        // Añadir enlaces con estilo mejorado
+        const link = svg.append('g')
+            .attr('class', 'links')
+            .selectAll('path') // Usar path en lugar de line para curvar los enlaces
+            .data(data.links)
+            .enter()
+            .append('path')
+            .attr('stroke', d => {
+                if (d.type === 'hierarchy' || d.type === 'parent') return '#7c4dff';
+                if (d.type === 'definition') return '#00b0ff';
+                if (d.importance === 'high') return '#e57373';
+                return '#90a4ae';
+            })
+            .attr('stroke-opacity', 0.7)
+            .attr('stroke-width', d => {
+                if (d.source.id === rootNode.id || d.target.id === rootNode.id) return 3;
+                if (d.importance === 'high') return 2.5;
+                if (d.importance === 'medium') return 1.5;
+                return 1;
+            })
+            .attr('stroke-dasharray', d => {
+                // Líneas punteadas para relaciones no jerárquicas
+                if (d.type !== 'hierarchy' && d.type !== 'parent') return '3,3';
+                return null;
+            })
+            .attr('fill', 'none')
+            .attr('marker-end', 'url(#arrowhead-fallback)');
+        
+        // Añadir nodos
+        const node = svg.append('g')
+            .attr('class', 'nodes')
+            .selectAll('g')
+            .data(data.nodes)
+            .enter()
+            .append('g')
+            .attr('class', d => `node-group level-${d.level} importance-${d.importance}`)
+            .call(d3.drag()
+                .on('start', dragstarted)
+                .on('drag', dragged)
+                .on('end', dragended));
+        
+        // Círculos para nodos con estilos mejorados
+        node.append('circle')
+            .attr('r', d => {
+                if (d.id === rootNode.id) return 40;
+                if (d.importance === 'high') return 30;
+                if (d.importance === 'medium') return 22;
+                return 15;
+            })
+            .attr('fill', d => {
+                if (d.id === rootNode.id) return '#ff7043'; // Tema principal
+                if (d.importance === 'high') return '#f44336'; // Conceptos importantes
+                if (d.importance === 'medium') return '#2196f3'; // Conceptos medios
+                return '#4caf50'; // Conceptos regulares
+            })
+            .attr('stroke', '#fff')
+            .attr('stroke-width', d => d.id === rootNode.id ? 3 : 2)
+            // Añadir brillo para resaltar nodos importantes
+            .attr('filter', d => {
+                if (d.id === rootNode.id) return 'url(#glow-strong)';
+                if (d.importance === 'high') return 'url(#glow-medium)';
+                return null;
+            });
+        
+        // Definir filtros de brillo
+        const defs = svg.append('defs');
+        
+        // Brillo fuerte para nodo raíz
+        const glowStrong = defs.append('filter')
+            .attr('id', 'glow-strong')
+            .attr('x', '-50%')
+            .attr('y', '-50%')
+            .attr('width', '200%')
+            .attr('height', '200%');
+        
+        glowStrong.append('feGaussianBlur')
+            .attr('stdDeviation', '6')
+            .attr('result', 'coloredBlur');
+            
+        const femergeStrong = glowStrong.append('feMerge');
+        femergeStrong.append('feMergeNode').attr('in', 'coloredBlur');
+        femergeStrong.append('feMergeNode').attr('in', 'SourceGraphic');
+        
+        // Brillo medio para nodos importantes
+        const glowMedium = defs.append('filter')
+            .attr('id', 'glow-medium')
+            .attr('x', '-50%')
+            .attr('y', '-50%')
+            .attr('width', '200%')
+            .attr('height', '200%');
+        
+        glowMedium.append('feGaussianBlur')
+            .attr('stdDeviation', '3')
+            .attr('result', 'coloredBlur');
+            
+        const femergeMedium = glowMedium.append('feMerge');
+        femergeMedium.append('feMergeNode').attr('in', 'coloredBlur');
+        femergeMedium.append('feMergeNode').attr('in', 'SourceGraphic');
+        
+        // Texto para nodos con mejor legibilidad
+        node.append('text')
+            .text(d => d.name)
+            .attr('dy', d => d.id === rootNode.id ? 6 : 4)
+            .attr('text-anchor', 'middle')
+            .style('fill', d => {
+                if (d.id === rootNode.id || d.importance === 'high') {
+                    return '#fff';
+                }
+                return '#333';
+            })
+            .style('font-weight', d => {
+                if (d.id === rootNode.id) return 'bold';
+                if (d.importance === 'high') return 'bold';
+                return 'normal';
+            })
+            .style('font-size', d => {
+                if (d.id === rootNode.id) return '16px';
+                if (d.importance === 'high') return '14px';
+                if (d.importance === 'medium') return '12px';
+                return '10px';
+            })
+            .style('pointer-events', 'none')
+            .each(function(d) {
+                // Truncar texto si es demasiado largo
+                const text = d3.select(this);
+                const textLength = text.node().getComputedTextLength();
+                const radius = d.id === rootNode.id ? 38 : 
+                            d.importance === 'high' ? 28 : 
+                            d.importance === 'medium' ? 20 : 14;
+                
+                if (textLength > radius * 2) {
+                    let name = d.name;
+                    // Truncar y añadir puntos suspensivos
+                    while (text.node().getComputedTextLength() > radius * 2) {
+                        name = name.slice(0, -1);
+                        text.text(name + '...');
+                        if (name.length <= 3) break;
+                    }
+                }
+            });
+        
+        // Añadir tooltips detallados
+        node.append('title')
+            .text(d => {
+                let tooltip = `${d.name}`;
+                if (d.description) tooltip += `\n\n${d.description}`;
+                if (d.category) tooltip += `\n\nCategoría: ${d.category}`;
+                if (d.examples && d.examples.length > 0) {
+                    tooltip += `\n\nEjemplos: ${d.examples.join(', ')}`;
+                }
+                if (d.properties && d.properties.length > 0) {
+                    tooltip += `\n\nPropiedades: ${d.properties.join(', ')}`;
+                }
+                return tooltip;
+            });
+        
+        // Agregar etiquetas solo para relaciones importantes
+        const relationshipLabels = labelGroup.selectAll('text')
+            .data(data.links.filter(d => 
+                (d.importance === 'high' || d.source.id === rootNode.id || d.target.id === rootNode.id) && 
+                d.label && d.label !== 'relacionado con' && d.label !== 'related' 
+            ))
+            .enter()
+            .append('text')
+            .attr('dy', -5)
+            .attr('text-anchor', 'middle')
+            .style('font-size', '10px')
+            .style('font-style', 'italic')
+            .style('fill', '#666')
+            .style('pointer-events', 'none')
+            .text(d => d.label);
+        
+        // Funciones para manejar el arrastre de nodos
+        function dragstarted(event, d) {
+            if (!event.active) simulation.alphaTarget(0.3).restart();
+            d.fx = d.x;
+            d.fy = d.y;
+        }
+        
+        function dragged(event, d) {
+            d.fx = event.x;
+            d.fy = event.y;
+        }
+        
+        function dragended(event, d) {
+            if (!event.active) simulation.alphaTarget(0);
+            // Mantener fijos solo los nodos importantes
+            if (d.id !== rootNode.id && d.importance !== 'high') {
+                d.fx = null;
+                d.fy = null;
+            }
+        }
+        
+        // Función para generar curvas para los enlaces
+        function linkArc(d) {
+            const dx = d.target.x - d.source.x;
+            const dy = d.target.y - d.source.y;
+            const dr = Math.sqrt(dx * dx + dy * dy) * 1.5; // Factor de curvatura
+            
+            // Si es una relación jerárquica, línea recta
+            if (d.type === 'hierarchy' || d.type === 'parent') {
+                return `M${d.source.x},${d.source.y}L${d.target.x},${d.target.y}`;
+            }
+            
+            // Si no, añadir curva
+            return `M${d.source.x},${d.source.y}A${dr},${dr} 0 0,1 ${d.target.x},${d.target.y}`;
+        }
+        
+        // Actualizar posiciones en cada tick
+        simulation.on('tick', () => {
+            link.attr('d', linkArc);
+            
+            node.attr('transform', d => `translate(${d.x}, ${d.y})`);
+            
+            // Actualizar posición de las etiquetas de relación
+            relationshipLabels
+                .attr('transform', d => {
+                    // Posición a mitad de camino entre nodos con pequeño desplazamiento
+                    const midX = (d.source.x + d.target.x) / 2;
+                    const midY = (d.source.y + d.target.y) / 2;
+                    
+                    // Pequeño desplazamiento perpendicular a la línea
+                    const dx = d.target.x - d.source.x;
+                    const dy = d.target.y - d.source.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    
+                    const offsetX = -dy / dist * 10;
+                    const offsetY = dx / dist * 10;
+                    
+                    return `translate(${midX + offsetX}, ${midY + offsetY})`;
+                });
+        });
+        
+        // Añadir el zoom
+        const zoom = d3.zoom()
+            .scaleExtent([0.5, 4])
+            .on('zoom', (event) => {
+                svg.attr('transform', event.transform);
+            });
+        
+        d3.select(svg.node().parentNode)
+            .call(zoom)
+            .on('dblclick.zoom', null);
+        
+        // Fijar posición inicial del nodo raíz para mejor organización
+        if (rootNode) {
+            rootNode.fx = 0;
+            rootNode.fy = -100;
+        }
+        
+        // Fijar posiciones iniciales de nodos importantes (nivel 2) para mejor organización
+        data.nodes.filter(n => n.level === 2).forEach((node, i, arr) => {
+            const angle = (i / arr.length) * 2 * Math.PI;
+            const radius = 200;
+            node.fx = Math.cos(angle) * radius;
+            node.fy = Math.sin(angle) * radius - 50;
+        });
+        
+        // Ejecutar la simulación con enfriamiento gradual
+        simulation
+            .alpha(1)
+            .alphaDecay(0.02) // Enfriamiento más lento para mejor organización
+            .restart();
     }
 });

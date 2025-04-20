@@ -1,0 +1,701 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Prueba de Visualizaciones de Mapas Conceptuales</title>
+    
+    <!-- Estilos CSS -->
+    <link rel="stylesheet" href="styles.css">
+    
+    <!-- Librerías externas para visualización -->
+    <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/markmap-lib@0.14.4/dist/browser/index.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/markmap-view@0.14.4/dist/browser/index.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10.0.2/dist/mermaid.min.js"></script>
+    
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f8fa;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            padding: 20px;
+        }
+        h1 {
+            text-align: center;
+            color: #2c3e50;
+            margin-bottom: 30px;
+        }
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            justify-content: center;
+        }
+        button {
+            padding: 8px 16px;
+            background-color: #3498db;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: #2980b9;
+        }
+        button.active {
+            background-color: #e74c3c;
+        }
+        button:disabled {
+            background-color: #95a5a6;
+            cursor: not-allowed;
+        }
+        #visualization-container {
+            min-height: 600px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .error {
+            color: #e74c3c;
+            padding: 10px;
+            background-color: #fadbd8;
+            border-radius: 4px;
+            margin-bottom: 10px;
+        }
+        .success {
+            color: #27ae60;
+            padding: 10px;
+            background-color: #d5f5e3;
+            border-radius: 4px;
+            margin-bottom: 10px;
+        }
+        .markmap > svg {
+            width: 100%;
+            height: 600px;
+        }
+        .loader {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100px;
+        }
+        .loader::after {
+            content: "";
+            width: 40px;
+            height: 40px;
+            border: 5px solid #ddd;
+            border-top-color: #3498db;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .input-section {
+            margin-bottom: 30px;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 20px;
+            background-color: #f9f9f9;
+        }
+        .input-section h2 {
+            margin-top: 0;
+            color: #34495e;
+            font-size: 18px;
+        }
+        textarea {
+            width: 100%;
+            min-height: 150px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            resize: vertical;
+            font-family: inherit;
+            margin-bottom: 15px;
+        }
+        .action-buttons {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+        }
+        .generate-btn {
+            background-color: #27ae60;
+            padding: 10px 20px;
+            font-weight: bold;
+        }
+        .generate-btn:hover {
+            background-color: #219653;
+        }
+        .clear-btn {
+            background-color: #7f8c8d;
+        }
+        .tabs {
+            display: flex;
+            border-bottom: 1px solid #ddd;
+            margin-bottom: 20px;
+        }
+        .tab-btn {
+            padding: 10px 20px;
+            background: none;
+            color: #7f8c8d;
+            border: none;
+            border-bottom: 3px solid transparent;
+            border-radius: 0;
+            font-weight: bold;
+        }
+        .tab-btn.active {
+            color: #3498db;
+            border-bottom-color: #3498db;
+            background: none;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Prueba de Visualizaciones de Mapas Conceptuales</h1>
+        
+        <div class="tabs">
+            <button class="tab-btn active" data-tab="test">Datos de Prueba</button>
+            <button class="tab-btn" data-tab="input">Entrada de Texto</button>
+        </div>
+        
+        <div id="status-message"></div>
+        
+        <div id="test-tab" class="tab-content active">
+            <div class="controls">
+                <button id="markmap-btn" class="active">Markmap</button>
+                <button id="mermaid-btn">Mermaid</button>
+                <button id="d3-btn">D3 Force</button>
+            </div>
+            
+            <div id="visualization-container">
+                <div class="loader"></div>
+            </div>
+        </div>
+        
+        <div id="input-tab" class="tab-content">
+            <div class="input-section">
+                <h2>Genera un mapa conceptual a partir de tu texto</h2>
+                <textarea id="text-input" placeholder="Escribe o pega aquí el texto que deseas convertir en un mapa conceptual..."></textarea>
+                <div class="action-buttons">
+                    <button id="clear-btn" class="clear-btn">Limpiar</button>
+                    <button id="generate-btn" class="generate-btn">Generar Mapa Conceptual</button>
+                </div>
+            </div>
+            
+            <div class="controls">
+                <button id="input-markmap-btn" class="active">Markmap</button>
+                <button id="input-mermaid-btn">Mermaid</button>
+                <button id="input-d3-btn">D3 Force</button>
+            </div>
+            
+            <div id="input-visualization-container">
+                <div class="initial-state" style="text-align: center; padding: 40px; color: #95a5a6;">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" fill="currentColor" viewBox="0 0 16 16">
+                        <path d="M6 13.5a1.5 1.5 0 0 1 1.5-1.5h1a1.5 1.5 0 0 1 1.5 1.5v1a1.5 1.5 0 0 1-1.5 1.5h-1A1.5 1.5 0 0 1 6 14.5zM2 9a1.5 1.5 0 0 1 1.5-1.5h1A1.5 1.5 0 0 1 6 9v1a1.5 1.5 0 0 1-1.5 1.5h-1A1.5 1.5 0 0 1 2 10zm10 0a1.5 1.5 0 0 1 1.5-1.5h1A1.5 1.5 0 0 1 16 9v1a1.5 1.5 0 0 1-1.5 1.5h-1A1.5 1.5 0 0 1 10 10zm-8-4a1.5 1.5 0 0 1 1.5-1.5h1A1.5 1.5 0 0 1 6 5v1a1.5 1.5 0 0 1-1.5 1.5h-1A1.5 1.5 0 0 1 2 6zm8 0a1.5 1.5 0 0 1 1.5-1.5h1A1.5 1.5 0 0 1 14 5v1a1.5 1.5 0 0 1-1.5 1.5h-1A1.5 1.5 0 0 1 10 6z"/>
+                    </svg>
+                    <h3>Sin mapa conceptual generado</h3>
+                    <p>Ingresa texto en el área superior y haz clic en "Generar Mapa Conceptual"</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Cargar datos de ejemplo -->
+    <script src="test-data.js"></script>
+    
+    <!-- Cargar el script principal -->
+    <script src="app.js"></script>
+    
+    <!-- Script para manejar la página de prueba -->
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Referencias a elementos del DOM
+            const tabBtns = document.querySelectorAll('.tab-btn');
+            const tabContents = document.querySelectorAll('.tab-content');
+            const markmapBtn = document.getElementById('markmap-btn');
+            const mermaidBtn = document.getElementById('mermaid-btn');
+            const d3Btn = document.getElementById('d3-btn');
+            const inputMarkmapBtn = document.getElementById('input-markmap-btn');
+            const inputMermaidBtn = document.getElementById('input-mermaid-btn');
+            const inputD3Btn = document.getElementById('input-d3-btn');
+            const container = document.getElementById('visualization-container');
+            const inputContainer = document.getElementById('input-visualization-container');
+            const statusMessage = document.getElementById('status-message');
+            const textInput = document.getElementById('text-input');
+            const clearBtn = document.getElementById('clear-btn');
+            const generateBtn = document.getElementById('generate-btn');
+            
+            // Variables globales
+            let currentFormat = 'markmap';
+            let generatedMapData = null;
+            
+            // Verificar que las funciones necesarias estén disponibles
+            function checkRequiredFunctions() {
+                console.log("Verificando funciones de visualización...");
+                
+                // Crear funciones alternativas si no están disponibles
+                if (typeof window.renderMarkmap !== 'function') {
+                    console.warn('La función renderMarkmap no está disponible. Usando implementación alternativa.');
+                    window.renderMarkmap = async function(data, container) {
+                        container.innerHTML = `
+                            <div style="padding: 20px; background-color: #f8f9fa; border-radius: 8px;">
+                                <h3>Mapa conceptual (Markmap)</h3>
+                                <p>Conceptos principales: ${data.concepts ? data.concepts.length : 0}</p>
+                                <p>Relaciones: ${data.relationships ? data.relationships.length : 0}</p>
+                                <div style="margin-top: 15px;">
+                                    <strong>Conceptos:</strong>
+                                    <ul style="max-height: 300px; overflow-y: auto;">
+                                        ${data.concepts ? data.concepts.map(c => 
+                                            `<li>${c.name} - ${c.description || ''}</li>`
+                                        ).join('') : 'No hay conceptos disponibles'}
+                                    </ul>
+                                </div>
+                            </div>
+                        `;
+                        return Promise.resolve();
+                    };
+                }
+                
+                if (typeof window.renderMermaid !== 'function') {
+                    console.warn('La función renderMermaid no está disponible. Usando implementación alternativa.');
+                    window.renderMermaid = async function(data, container) {
+                        container.innerHTML = `
+                            <div style="padding: 20px; background-color: #f8f9fa; border-radius: 8px;">
+                                <h3>Mapa conceptual (Mermaid)</h3>
+                                <p>Conceptos principales: ${data.concepts ? data.concepts.length : 0}</p>
+                                <p>Relaciones: ${data.relationships ? data.relationships.length : 0}</p>
+                                <div style="margin-top: 15px;">
+                                    <strong>Estructura:</strong>
+                                    <pre style="background-color: #f0f0f0; padding: 10px; border-radius: 4px; max-height: 300px; overflow-y: auto;">
+flowchart TD
+    ${data.concepts ? data.concepts.map(c => `C${c.id.replace(/\D/g, '')}["${c.name}"]`).join('\n    ') : ''}
+    
+    ${data.relationships ? data.relationships.map(r => 
+        `C${r.sourceId.replace(/\D/g, '')} --> |"${r.label}"| C${r.targetId.replace(/\D/g, '')}`
+    ).join('\n    ') : ''}
+                                    </pre>
+                                </div>
+                            </div>
+                        `;
+                        return Promise.resolve();
+                    };
+                }
+                
+                if (typeof window.renderD3ConceptMap !== 'function') {
+                    console.warn('La función renderD3ConceptMap no está disponible. Usando implementación alternativa.');
+                    window.renderD3ConceptMap = async function(data, container) {
+                        container.innerHTML = `
+                            <div style="padding: 20px; background-color: #f8f9fa; border-radius: 8px;">
+                                <h3>Mapa conceptual (D3 Force)</h3>
+                                <p>Conceptos principales: ${data.concepts ? data.concepts.length : 0}</p>
+                                <p>Relaciones: ${data.relationships ? data.relationships.length : 0}</p>
+                                <div style="margin-top: 15px;">
+                                    <strong>Conceptos por nivel:</strong>
+                                    <ul style="max-height: 300px; overflow-y: auto;">
+                                        ${data.concepts ? Array.from(new Set(data.concepts.map(c => c.hierarchyLevel))).sort((a, b) => a - b).map(level => 
+                                            `<li>Nivel ${level}: ${data.concepts.filter(c => c.hierarchyLevel === level).map(c => c.name).join(', ')}</li>`
+                                        ).join('') : 'No hay conceptos disponibles'}
+                                    </ul>
+                                </div>
+                            </div>
+                        `;
+                        return Promise.resolve();
+                    };
+                }
+                
+                console.log("Funciones de visualización verificadas y disponibles.");
+            }
+            
+            // Ejecutar la verificación de funciones al inicio
+            checkRequiredFunctions();
+            
+            // Función para mostrar mensajes de estado
+            function showMessage(message, type = 'info') {
+                statusMessage.innerHTML = message;
+                statusMessage.className = type;
+                setTimeout(() => {
+                    statusMessage.innerHTML = '';
+                    statusMessage.className = '';
+                }, 5000);
+            }
+            
+            // Cambio de pestañas
+            tabBtns.forEach(btn => {
+                btn.addEventListener('click', () => {
+                    tabBtns.forEach(b => b.classList.remove('active'));
+                    tabContents.forEach(c => c.classList.remove('active'));
+                    
+                    btn.classList.add('active');
+                    const tabId = btn.getAttribute('data-tab');
+                    document.getElementById(`${tabId}-tab`).classList.add('active');
+                });
+            });
+            
+            // Función para activar un botón y desactivar los demás
+            function setActiveButton(activeButton, buttons) {
+                buttons.forEach(button => {
+                    button.classList.remove('active');
+                });
+                activeButton.classList.add('active');
+            }
+            
+            // Limpiar texto de entrada
+            clearBtn.addEventListener('click', () => {
+                textInput.value = '';
+                showMessage('Texto limpiado', 'success');
+            });
+            
+            // Botones de formato para datos de prueba
+            markmapBtn.addEventListener('click', function() {
+                setActiveButton(this, [markmapBtn, mermaidBtn, d3Btn]);
+                container.innerHTML = '<div class="loader"></div>';
+                currentFormat = 'markmap';
+                
+                window.renderMarkmap(testConceptMapData, container)
+                    .then(() => {
+                        showMessage('Visualización Markmap cargada correctamente', 'success');
+                    })
+                    .catch(error => {
+                        console.error('Error al renderizar Markmap:', error);
+                        showMessage(`Error al renderizar Markmap: ${error.message}`, 'error');
+                        container.innerHTML = `<div class="error">Error al cargar la visualización: ${error.message}</div>`;
+                    });
+            });
+            
+            mermaidBtn.addEventListener('click', function() {
+                setActiveButton(this, [markmapBtn, mermaidBtn, d3Btn]);
+                container.innerHTML = '<div class="loader"></div>';
+                currentFormat = 'mermaid';
+                
+                window.renderMermaid(testConceptMapData, container)
+                    .then(() => {
+                        showMessage('Visualización Mermaid cargada correctamente', 'success');
+                    })
+                    .catch(error => {
+                        console.error('Error al renderizar Mermaid:', error);
+                        showMessage(`Error al renderizar Mermaid: ${error.message}`, 'error');
+                        container.innerHTML = `<div class="error">Error al cargar la visualización: ${error.message}</div>`;
+                    });
+            });
+            
+            d3Btn.addEventListener('click', function() {
+                setActiveButton(this, [markmapBtn, mermaidBtn, d3Btn]);
+                container.innerHTML = '<div class="loader"></div>';
+                currentFormat = 'd3';
+                
+                window.renderD3ConceptMap(testConceptMapData, container)
+                    .then(() => {
+                        showMessage('Visualización D3 cargada correctamente', 'success');
+                    })
+                    .catch(error => {
+                        console.error('Error al renderizar D3:', error);
+                        showMessage(`Error al renderizar D3: ${error.message}`, 'error');
+                        container.innerHTML = `<div class="error">Error al cargar la visualización: ${error.message}</div>`;
+                    });
+            });
+            
+            // Botones de formato para entrada de usuario
+            inputMarkmapBtn.addEventListener('click', function() {
+                if (!generatedMapData) return;
+
+                setActiveButton(this, [inputMarkmapBtn, inputMermaidBtn, inputD3Btn]);
+                inputContainer.innerHTML = '<div class="loader"></div>';
+                
+                window.renderMarkmap(generatedMapData, inputContainer)
+                    .then(() => {
+                        showMessage('Visualización Markmap cargada correctamente', 'success');
+                    })
+                    .catch(error => {
+                        console.error('Error al renderizar Markmap:', error);
+                        showMessage(`Error al renderizar Markmap: ${error.message}`, 'error');
+                        inputContainer.innerHTML = `<div class="error">Error al cargar la visualización: ${error.message}</div>`;
+                    });
+            });
+            
+            inputMermaidBtn.addEventListener('click', function() {
+                if (!generatedMapData) return;
+
+                setActiveButton(this, [inputMarkmapBtn, inputMermaidBtn, inputD3Btn]);
+                inputContainer.innerHTML = '<div class="loader"></div>';
+                
+                window.renderMermaid(generatedMapData, inputContainer)
+                    .then(() => {
+                        showMessage('Visualización Mermaid cargada correctamente', 'success');
+                    })
+                    .catch(error => {
+                        console.error('Error al renderizar Mermaid:', error);
+                        showMessage(`Error al renderizar Mermaid: ${error.message}`, 'error');
+                        inputContainer.innerHTML = `<div class="error">Error al cargar la visualización: ${error.message}</div>`;
+                    });
+            });
+            
+            inputD3Btn.addEventListener('click', function() {
+                if (!generatedMapData) return;
+
+                setActiveButton(this, [inputMarkmapBtn, inputMermaidBtn, inputD3Btn]);
+                inputContainer.innerHTML = '<div class="loader"></div>';
+                
+                window.renderD3ConceptMap(generatedMapData, inputContainer)
+                    .then(() => {
+                        showMessage('Visualización D3 cargada correctamente', 'success');
+                    })
+                    .catch(error => {
+                        console.error('Error al renderizar D3:', error);
+                        showMessage(`Error al renderizar D3: ${error.message}`, 'error');
+                        inputContainer.innerHTML = `<div class="error">Error al cargar la visualización: ${error.message}</div>`;
+                    });
+            });
+            
+            // Función para generar mapa conceptual a partir del texto
+            generateBtn.addEventListener('click', function() {
+                const text = textInput.value.trim();
+                
+                if (!text) {
+                    showMessage('Por favor, ingresa texto para procesar', 'error');
+                    return;
+                }
+                
+                try {
+                    console.log("Botón Generar Mapa Conceptual clickeado");
+                    
+                    // Desactivar botón y mostrar indicador de carga
+                    generateBtn.disabled = true;
+                    generateBtn.textContent = 'Procesando...';
+                    inputContainer.innerHTML = '<div class="loader"></div>';
+                    
+                    // Procesamiento simulado para dar feedback visual
+                    setTimeout(() => {
+                        try {
+                            console.log("Iniciando procesamiento del texto...");
+                            
+                            // Generar estructura de datos para el mapa conceptual
+                            const processedData = processTextToConceptMap(text);
+                            generatedMapData = processedData;
+                            
+                            console.log("Datos generados:", processedData);
+                            
+                            // Determinar qué visualización usar según botón activo
+                            const activeBtn = document.querySelector('#input-tab .controls button.active');
+                            const format = activeBtn ? activeBtn.id.replace('input-', '').replace('-btn', '') : 'markmap';
+                            
+                            console.log("Formato seleccionado:", format);
+                            
+                            // Renderizar mapa conceptual
+                            if (format === 'markmap') {
+                                window.renderMarkmap(processedData, inputContainer)
+                                    .then(() => {
+                                        console.log("Visualización Markmap completada");
+                                        showMessage('Mapa conceptual generado correctamente', 'success');
+                                    })
+                                    .catch(error => {
+                                        console.error("Error en renderMarkmap:", error);
+                                        showMessage(`Error: ${error.message}`, 'error');
+                                    });
+                            } else if (format === 'mermaid') {
+                                window.renderMermaid(processedData, inputContainer)
+                                    .then(() => {
+                                        console.log("Visualización Mermaid completada");
+                                        showMessage('Mapa conceptual generado correctamente', 'success');
+                                    })
+                                    .catch(error => {
+                                        console.error("Error en renderMermaid:", error);
+                                        showMessage(`Error: ${error.message}`, 'error');
+                                    });
+                            } else {
+                                window.renderD3ConceptMap(processedData, inputContainer)
+                                    .then(() => {
+                                        console.log("Visualización D3 completada");
+                                        showMessage('Mapa conceptual generado correctamente', 'success');
+                                    })
+                                    .catch(error => {
+                                        console.error("Error en renderD3ConceptMap:", error);
+                                        showMessage(`Error: ${error.message}`, 'error');
+                                    });
+                            }
+                        } catch (error) {
+                            console.error('Error al generar mapa conceptual:', error);
+                            inputContainer.innerHTML = `
+                                <div class="error">
+                                    <h3>Error al generar el mapa conceptual</h3>
+                                    <p>${error.message}</p>
+                                </div>
+                            `;
+                            showMessage(`Error: ${error.message}`, 'error');
+                        } finally {
+                            // Restaurar botón
+                            generateBtn.disabled = false;
+                            generateBtn.textContent = 'Generar Mapa Conceptual';
+                        }
+                    }, 1000); // Retardo para simular procesamiento
+                } catch (error) {
+                    console.error('Error general:', error);
+                    generateBtn.disabled = false;
+                    generateBtn.textContent = 'Generar Mapa Conceptual';
+                    showMessage(`Error: ${error.message}`, 'error');
+                }
+            });
+            
+            // Función que procesa texto y genera estructura de datos para mapa conceptual
+            function processTextToConceptMap(text) {
+                console.log("Procesando texto:", text.substring(0, 50) + "...");
+                
+                try {
+                    // Extraer conceptos del texto - Simulación
+                    const sentences = text.split(/[.!?]+/).filter(s => s.trim().length > 0);
+                    const mainTopic = sentences[0].trim();
+                    
+                    // Crear conceptos basados en frases
+                    const concepts = [];
+                    const relationships = [];
+                    
+                    // Concepto principal
+                    concepts.push({
+                        id: "c1",
+                        name: mainTopic.length > 30 ? mainTopic.substring(0, 30) + "..." : mainTopic,
+                        description: mainTopic,
+                        importance: "high",
+                        hierarchyLevel: 1,
+                        category: "principal"
+                    });
+                    
+                    // Crear conceptos secundarios a partir de frases
+                    let idCounter = 2;
+                    for (let i = 1; i < Math.min(sentences.length, 10); i++) {
+                        const sentence = sentences[i].trim();
+                        if (sentence.length < 5) continue; // Saltar frases muy cortas
+                        
+                        // Crear concepto
+                        concepts.push({
+                            id: "c" + idCounter,
+                            name: sentence.length > 40 ? sentence.substring(0, 40) + "..." : sentence,
+                            description: sentence,
+                            importance: i <= 3 ? "medium" : "low",
+                            hierarchyLevel: 2,
+                            category: "secundario"
+                        });
+                        
+                        // Crear relación con el concepto principal
+                        relationships.push({
+                            sourceId: "c1",
+                            targetId: "c" + idCounter,
+                            type: "hierarchy",
+                            label: "relacionado con",
+                            importance: "medium"
+                        });
+                        
+                        idCounter++;
+                    }
+                    
+                    // Si el texto es extenso, extraer algunas palabras clave
+                    if (text.length > 200) {
+                        const words = text.toLowerCase().split(/\W+/).filter(w => w.length > 4);
+                        const wordCounts = {};
+                        
+                        // Contar frecuencia de palabras
+                        words.forEach(word => {
+                            if (!wordCounts[word]) wordCounts[word] = 0;
+                            wordCounts[word]++;
+                        });
+                        
+                        // Encontrar palabras más frecuentes
+                        const topWords = Object.entries(wordCounts)
+                            .sort((a, b) => b[1] - a[1])
+                            .slice(0, 5)
+                            .map(entry => entry[0]);
+                        
+                        // Crear conceptos adicionales para palabras clave
+                        topWords.forEach(word => {
+                            concepts.push({
+                                id: "c" + idCounter,
+                                name: word.charAt(0).toUpperCase() + word.slice(1),
+                                description: "Término clave mencionado en el texto",
+                                importance: "medium",
+                                hierarchyLevel: 3,
+                                category: "término"
+                            });
+                            
+                            // Conectar a un concepto secundario aleatorio
+                            const targetId = "c" + Math.floor(Math.random() * (idCounter - 2) + 2);
+                            
+                            relationships.push({
+                                sourceId: targetId,
+                                targetId: "c" + idCounter,
+                                type: "contains",
+                                label: "contiene",
+                                importance: "low"
+                            });
+                            
+                            idCounter++;
+                        });
+                    }
+                    
+                    console.log(`Generados ${concepts.length} conceptos y ${relationships.length} relaciones`);
+                    
+                    return {
+                        title: mainTopic,
+                        concepts: concepts,
+                        relationships: relationships,
+                        conclusion: {
+                            summary: `Este mapa conceptual representa las ideas principales extraídas de un texto sobre "${mainTopic}".`,
+                            keyPoints: [
+                                "Generado automáticamente a partir del texto de entrada",
+                                "Se identificaron " + concepts.length + " conceptos clave",
+                                "Se establecieron " + relationships.length + " relaciones entre conceptos"
+                            ]
+                        }
+                    };
+                } catch (error) {
+                    console.error("Error procesando texto:", error);
+                    throw new Error("Error al procesar el texto. Inténtalo de nuevo con otro contenido.");
+                }
+            }
+            
+            // Renderizar con Markmap por defecto al cargar
+            try {
+                // Mostrar loader
+                container.innerHTML = '<div class="loader"></div>';
+                
+                // Verificar que las funciones estén disponibles
+                checkRequiredFunctions();
+                
+                // Render inicial con Markmap
+                setTimeout(() => {
+                    window.renderMarkmap(testConceptMapData, container)
+                        .then(() => {
+                            showMessage('Visualización Markmap cargada correctamente', 'success');
+                        })
+                        .catch(error => {
+                            console.error('Error al renderizar Markmap:', error);
+                            showMessage(`Error al renderizar Markmap: ${error.message}`, 'error');
+                            container.innerHTML = `<div class="error">Error al cargar la visualización: ${error.message}</div>`;
+                        });
+                }, 500);
+            } catch (error) {
+                console.error('Error en la inicialización:', error);
+                showMessage(`Error: ${error.message}`, 'error');
+                container.innerHTML = `<div class="error">Error de inicialización: ${error.message}</div>`;
+            }
+        });
+    </script>
+</body>
+</html> 

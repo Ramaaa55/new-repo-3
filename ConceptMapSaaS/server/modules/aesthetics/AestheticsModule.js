@@ -414,19 +414,96 @@ class AestheticsModule extends BaseModule {
   }
   
   /**
-   * Construye datos jerárquicos para la visualización
+   * Construye datos jerárquicos para la visualización en formato piramidal
    * @private
    */
   _buildHierarchicalData(concepts, relationships) {
-    // Encontrar el concepto raíz (nivel 0 o el más importante)
-    const rootConcepts = concepts.filter(c => c.hierarchyLevel === 0);
-    const rootConcept = rootConcepts.length > 0 
-      ? rootConcepts[0] 
-      : concepts.sort((a, b) => (b.importance || 0) - (a.importance || 0))[0];
+    // Primero, añadir nivel jerárquico a los conceptos si no lo tienen
+    concepts.forEach(concept => {
+      // Si no tiene hierarchyLevel explícito, asignar uno basado en las relaciones
+      if (concept.hierarchyLevel === undefined) {
+        // Por defecto es nivel 1, a menos que se determine otra cosa
+        concept.hierarchyLevel = 1;
+      }
+    });
     
-    // Función recursiva para construir la jerarquía
-    const buildHierarchy = (concept, visited = new Set()) => {
-      // Evitar ciclos infinitos
+    // Calcular conexiones para cada concepto
+    const connectionCounts = {};
+    relationships.forEach(rel => {
+      if (!connectionCounts[rel.sourceId]) connectionCounts[rel.sourceId] = 0;
+      if (!connectionCounts[rel.targetId]) connectionCounts[rel.targetId] = 0;
+      connectionCounts[rel.sourceId]++;
+      connectionCounts[rel.targetId]++;
+    });
+    
+    // Actualizar importancia basada en conexiones si no está definida
+    concepts.forEach(concept => {
+      if (concept.importance === undefined) {
+        const connections = connectionCounts[concept.id] || 0;
+        concept.importance = Math.min(0.9, 0.3 + (connections * 0.1));
+      }
+    });
+    
+    // Encontrar el concepto raíz (nivel 0 o el más importante)
+    let rootConcept;
+    
+    // Prioridad 1: Concepto explícitamente marcado como nivel 0
+    const rootConcepts = concepts.filter(c => c.hierarchyLevel === 0);
+    if (rootConcepts.length > 0) {
+      // Si hay varios de nivel 0, tomar el más importante
+      rootConcept = rootConcepts.sort((a, b) => (b.importance || 0) - (a.importance || 0))[0];
+    } else {
+      // Prioridad 2: Concepto con más conexiones salientes
+      const outgoingConnections = {};
+      relationships.forEach(rel => {
+        if (!outgoingConnections[rel.sourceId]) outgoingConnections[rel.sourceId] = 0;
+        outgoingConnections[rel.sourceId]++;
+      });
+      
+      // Ordenar por conexiones salientes y luego por importancia
+      const sortedByOutgoing = [...concepts].sort((a, b) => {
+        const aOutgoing = outgoingConnections[a.id] || 0;
+        const bOutgoing = outgoingConnections[b.id] || 0;
+        if (aOutgoing !== bOutgoing) return bOutgoing - aOutgoing;
+        return (b.importance || 0) - (a.importance || 0);
+      });
+      
+      rootConcept = sortedByOutgoing[0];
+    }
+    
+    // Asegurar que el concepto raíz sea nivel 0
+    rootConcept.hierarchyLevel = 0;
+    
+    // Crear un mapa de relaciones para búsqueda rápida
+    const relationMap = {};
+    relationships.forEach(rel => {
+      if (!relationMap[rel.sourceId]) relationMap[rel.sourceId] = [];
+      relationMap[rel.sourceId].push(rel);
+    });
+    
+    // Asignar niveles jerárquicos basados en la distancia desde la raíz
+    const assignHierarchyLevels = (conceptId, level, visited = new Set()) => {
+      if (visited.has(conceptId)) return;
+      visited.add(conceptId);
+      
+      // Actualizar nivel jerárquico solo si es mayor que el actual
+      const concept = concepts.find(c => c.id === conceptId);
+      if (concept && level < concept.hierarchyLevel) {
+        concept.hierarchyLevel = level;
+      }
+      
+      // Procesar los conceptos conectados
+      const outgoingRels = relationMap[conceptId] || [];
+      outgoingRels.forEach(rel => {
+        assignHierarchyLevels(rel.targetId, level + 1, visited);
+      });
+    };
+    
+    // Comenzar la asignación de niveles desde la raíz
+    assignHierarchyLevels(rootConcept.id, 0);
+    
+    // Función recursiva para construir la jerarquía con formato piramidal
+    const buildHierarchy = (concept, level = 0, visited = new Set()) => {
       if (visited.has(concept.id)) {
         return {
           id: concept.id,
@@ -438,41 +515,79 @@ class AestheticsModule extends BaseModule {
       
       visited.add(concept.id);
       
-      // Encontrar conceptos hijos directos
-      let children = [];
+      // Encontrar todos los conceptos hijos (targets de las relaciones donde este concepto es source)
+      const children = [];
+      const childRelationships = relationMap[concept.id] || [];
       
-      // Si el concepto tiene childrenIds, usarlos
-      if (concept.childrenIds && Array.isArray(concept.childrenIds)) {
-        children = concept.childrenIds
-          .map(id => concepts.find(c => c.id === id))
-          .filter(Boolean)
-          .map(child => buildHierarchy(child, new Set(visited)));
-      } else {
-        // Si no tiene childrenIds, inferir relaciones jerárquicas
-        const childRelationships = relationships.filter(r => 
-          r.source === concept.id && 
-          ['jerarquia', 'parte', 'contiene', 'incluye'].includes(r.type?.toLowerCase())
-        );
+      // Filtrar y ordenar los hijos para obtener una estructura piramidal
+      if (childRelationships.length > 0) {
+        // Obtener todos los conceptos hijos potenciales
+        const childConcepts = childRelationships
+          .map(rel => {
+            const target = concepts.find(c => c.id === rel.targetId);
+            if (target) {
+              return {
+                concept: target,
+                relationType: rel.type || 'relacionado',
+                strength: rel.strength || 0.5
+              };
+            }
+            return null;
+          })
+          .filter(Boolean);
         
-        children = childRelationships
-          .map(rel => concepts.find(c => c.id === rel.target))
-          .filter(Boolean)
-          .map(child => buildHierarchy(child, new Set(visited)));
+        // Ordenar hijos por nivel jerárquico, relación jerárquica, y luego por importancia
+        childConcepts.sort((a, b) => {
+          // Primero por nivel jerárquico (si está definido)
+          const aLevel = a.concept.hierarchyLevel !== undefined ? a.concept.hierarchyLevel : Number.MAX_SAFE_INTEGER;
+          const bLevel = b.concept.hierarchyLevel !== undefined ? b.concept.hierarchyLevel : Number.MAX_SAFE_INTEGER;
+          if (aLevel !== bLevel) return aLevel - bLevel;
+          
+          // Luego por tipo de relación jerárquica
+          const aIsHierarchical = ['jerarquia', 'parte', 'contiene', 'incluye', 'tipo'].includes(a.relationType.toLowerCase());
+          const bIsHierarchical = ['jerarquia', 'parte', 'contiene', 'incluye', 'tipo'].includes(b.relationType.toLowerCase());
+          if (aIsHierarchical && !bIsHierarchical) return -1;
+          if (!aIsHierarchical && bIsHierarchical) return 1;
+          
+          // Finalmente por importancia del concepto
+          return (b.concept.importance || 0) - (a.concept.importance || 0);
+        });
+        
+        // Añadir los hijos ordenados a la jerarquía
+        for (const child of childConcepts) {
+          // No agregar si ya se visitó o si es una relación circular
+          if (!visited.has(child.concept.id)) {
+            children.push(buildHierarchy(child.concept, level + 1, new Set(visited)));
+          }
+        }
       }
       
-      // Construir nodo jerárquico
+      // Construir nodo jerárquico con formato visual mejorado
       return {
         id: concept.id,
         name: concept.name,
         importance: concept.importance,
+        level: concept.hierarchyLevel,
         visual: concept.visualProperties,
         tooltip: concept.tooltip,
+        description: concept.description,
+        category: concept.category,
         children: children.length > 0 ? children : undefined
       };
     };
     
-    // Construir jerarquía completa a partir del concepto raíz
-    return buildHierarchy(rootConcept);
+    // Construir jerarquía completa a partir del concepto raíz con formato piramidal
+    const hierarchyData = buildHierarchy(rootConcept);
+    
+    // Añadir metadatos sobre la estructura
+    hierarchyData.metadata = {
+      totalNodes: concepts.length,
+      maxDepth: Math.max(...concepts.map(c => c.hierarchyLevel || 0)),
+      rootConcept: rootConcept.name,
+      hierarchyType: 'pyramid'
+    };
+    
+    return hierarchyData;
   }
   
   /**

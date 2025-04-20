@@ -4,7 +4,7 @@ const fs = require('fs');
 
 // Inicializar la aplicación Express
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3001;
 
 // Middleware para procesar JSON y datos de formularios
 app.use(express.json({ limit: '50mb' }));
@@ -950,6 +950,244 @@ app.post('/api/generate-map-fast', async (req, res) => {
     res.status(500).json({ 
       error: 'Error en el procesamiento', 
       message: error.message 
+    });
+  }
+});
+
+/**
+ * Endpoint avanzado para generación de mapas conceptuales usando el sistema modular completo
+ * con monitoreo de rendimiento, manejo de errores y soporte para personalización
+ */
+app.post('/api/generate-map/enhanced', async (req, res) => {
+  console.log('POST /api/generate-map/enhanced - Solicitud recibida');
+  const startTime = Date.now();
+  
+  try {
+    // Validar entrada
+    const { text, options } = req.body;
+    
+    if (!text || typeof text !== 'string' || text.trim().length < 10) {
+      return res.status(400).json({
+        success: false,
+        error: 'Se requiere un texto válido de al menos 10 caracteres'
+      });
+    }
+    
+    // Configuración del pipeline
+    const pipelineConfig = {
+      // Configuración global
+      timeoutMs: options?.timeoutMs || 60000,
+      maxTextLength: options?.maxTextLength || 10000,
+      language: options?.language || 'es',
+      
+      // Configuración por módulo
+      modules: {
+        organization: {
+          tools: {
+            haystack: options?.useHaystack !== false,
+            penrose: options?.usePenrose !== false,
+            spacy: options?.useSpacy !== false
+          },
+          maxConcepts: options?.maxConcepts || 50,
+          hierarchyLevels: options?.hierarchyLevels || 3
+        },
+        
+        reasoning: {
+          tools: {
+            deepSeek: options?.useDeepSeek !== false,
+            openAGI: options?.useOpenAGI !== false,
+            graphRAG: options?.useGraphRAG !== false
+          },
+          confidenceThreshold: options?.confidenceThreshold || 0.5,
+          maxRelationships: options?.maxRelationships || 200
+        },
+        
+        enrichment: {
+          tools: {
+            semanticKernel: options?.useSemanticKernel !== false,
+            semanticScholar: options?.useSemanticScholar !== false,
+            wikidataToolkit: options?.useWikidata !== false,
+            conceptNet: options?.useConceptNet !== false
+          },
+          maxDefinitionLength: options?.maxDefinitionLength || 250,
+          maxPropertiesPerConcept: options?.maxPropertiesPerConcept || 5
+        },
+        
+        validation: {
+          tools: {
+            arguflow: options?.useArguflow !== false,
+            trieve: options?.useTrieve !== false,
+            dePlot: options?.useDePlot !== false,
+            nemoGuardrails: options?.useNemoGuardrails !== false
+          },
+          factCheckThreshold: options?.factCheckThreshold || 0.6,
+          fixInconsistencies: options?.fixInconsistencies !== false
+        },
+        
+        aesthetics: {
+          tools: {
+            markmap: options?.useMarkmap !== false,
+            shikiTwoslash: options?.useShikiTwoslash !== false,
+            openProps: options?.useOpenProps !== false,
+            lottie: options?.useLottie !== false,
+            tippyJs: options?.useTippyJs !== false
+          },
+          theme: options?.theme || 'default',
+          colorScheme: options?.colorScheme || 'automatic',
+          visualStyle: options?.visualStyle || 'modern'
+        },
+        
+        conclusion: {
+          includeVerification: options?.includeVerification !== false,
+          includeRecommendations: options?.includeRecommendations !== false,
+          maxSummaryLength: options?.maxSummaryLength || 500
+        }
+      }
+    };
+    
+    // Determinar qué pipeline utilizar
+    let pipeline;
+    
+    if (options?.fastProcessing) {
+      console.log('Usando pipeline rápido');
+      pipeline = conceptMapModules.createFastPipeline(pipelineConfig);
+    } else if (options?.focusEnrichment) {
+      console.log('Usando pipeline enfocado en enriquecimiento');
+      pipeline = conceptMapModules.createEnrichmentPipeline(pipelineConfig);
+    } else if (options?.focusValidation) {
+      console.log('Usando pipeline enfocado en validación');
+      pipeline = conceptMapModules.createValidationPipeline(pipelineConfig);
+    } else if (options?.focusAesthetics) {
+      console.log('Usando pipeline enfocado en estética');
+      pipeline = conceptMapModules.createAestheticsPipeline(pipelineConfig);
+    } else if (options?.customStages && Array.isArray(options.customStages)) {
+      console.log(`Usando pipeline personalizado con etapas: ${options.customStages.join(', ')}`);
+      pipeline = conceptMapModules.createCustomPipeline(options.customStages, pipelineConfig);
+    } else {
+      console.log('Usando pipeline completo');
+      pipeline = conceptMapModules.createPipeline(pipelineConfig);
+    }
+    
+    // Procesar el texto con timeout
+    const processingPromise = pipeline.processText(text, {
+      language: options?.language || 'es',
+      ...options
+    });
+    
+    // Agregar timeout
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('Timeout al procesar el mapa conceptual')), pipelineConfig.timeoutMs);
+    });
+    
+    // Esperar por el primer resultado (procesamiento o timeout)
+    const result = await Promise.race([processingPromise, timeoutPromise]);
+    
+    // Preparar respuesta
+    const processingTime = Date.now() - startTime;
+    
+    // Construir respuesta con encapsulación de datos
+    const response = {
+      success: true,
+      processingTime,
+      textLength: text.length,
+      mapData: {
+        concepts: result.concepts || [],
+        relationships: result.relationships || []
+      },
+      meta: {
+        processingSummary: {
+          totalTime: processingTime,
+          moduleTimings: result.metadata?.processingTime?.byModule || {},
+          pipeline: result.metadata?.pipelineConfig || {}
+        }
+      }
+    };
+    
+    // Incluir validación si está disponible
+    if (result.metadata?.stageResults?.validation) {
+      response.meta.validation = result.metadata.stageResults.validation;
+    }
+    
+    // Incluir resultado visual si está disponible
+    if (result.visualization) {
+      response.visualization = result.visualization;
+    }
+    
+    // Incluir conclusión si está disponible
+    if (result.conclusion) {
+      response.conclusion = result.conclusion;
+    }
+    
+    console.log(`POST /api/generate-map/enhanced - Procesado en ${processingTime}ms, ${response.mapData.concepts.length} conceptos, ${response.mapData.relationships.length} relaciones`);
+    res.json(response);
+    
+  } catch (error) {
+    console.error('Error al generar mapa conceptual:', error);
+    
+    // Determinar código de error adecuado
+    let statusCode = 500;
+    if (error.message.includes('Timeout')) statusCode = 408;
+    if (error.message.includes('Se requiere')) statusCode = 400;
+    
+    // Enviar respuesta de error
+    res.status(statusCode).json({
+      success: false,
+      error: error.message,
+      processingTime: Date.now() - startTime
+    });
+  }
+});
+
+/**
+ * Endpoint de monitoreo del sistema de mapas conceptuales
+ */
+app.get('/api/concept-map/health', (req, res) => {
+  try {
+    // Crear pipeline temporal para acceder a las métricas
+    const pipeline = conceptMapModules.createPipeline();
+    
+    // Obtener estadísticas de rendimiento si es un PipelineManager mejorado
+    let performanceStats = {};
+    if (typeof pipeline.getPerformanceStats === 'function') {
+      performanceStats = pipeline.getPerformanceStats();
+    }
+    
+    // Información del sistema
+    const systemInfo = {
+      version: process.env.npm_package_version || '1.0.0',
+      node: process.version,
+      memoryUsage: process.memoryUsage(),
+      uptime: process.uptime(),
+      endpoints: [
+        { path: '/api/generate-map', method: 'POST', description: 'API estándar' },
+        { path: '/api/generate-map/ai-sdk', method: 'POST', description: 'API con AI SDK' },
+        { path: '/api/generate-map-modular', method: 'POST', description: 'API con módulos' },
+        { path: '/api/generate-map/enhanced', method: 'POST', description: 'API mejorada' },
+      ],
+      modulesSummary: {
+        pipeline: Object.keys(conceptMapModules).filter(k => k.startsWith('create')),
+        modules: [
+          'organization', 
+          'reasoning', 
+          'enrichment', 
+          'validation', 
+          'aesthetics', 
+          'conclusion'
+        ]
+      }
+    };
+    
+    res.json({
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+      performanceStats,
+      system: systemInfo
+    });
+  } catch (error) {
+    console.error('Error en health check:', error);
+    res.status(500).json({
+      status: 'unhealthy',
+      error: error.message
     });
   }
 });

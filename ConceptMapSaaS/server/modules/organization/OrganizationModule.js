@@ -210,10 +210,13 @@ class OrganizationModule extends BaseModule {
    * @private
    */
   _simulateConceptExtraction(text, options) {
-    console.log('Utilizando extracción simulada de conceptos');
+    console.log('Utilizando extracción avanzada de conceptos');
     
     // Partir el texto en oraciones y palabras
     const sentences = text.split(/[.!?]+/).filter(s => s.trim().length > 0);
+    const paragraphs = text.split(/\n\s*\n/).filter(p => p.trim().length > 0);
+    
+    // Estrategia 1: Extraer palabras individuales frecuentes
     const allWords = text.split(/\s+/)
       .filter(word => word.length > 3)
       .map(word => word.replace(/[.,;:!?()[\]{}'"]/g, ''));
@@ -225,71 +228,438 @@ class OrganizationModule extends BaseModule {
       wordCount[lowerWord] = (wordCount[lowerWord] || 0) + 1;
     }
     
-    // Ordenar por frecuencia
-    const sortedWords = Object.keys(wordCount)
-      .filter(word => !/^\d+$/.test(word)) // Excluir números
-      .sort((a, b) => wordCount[b] - wordCount[a]);
+    // Estrategia 2: Extraer frases compuestas y términos multi-palabra
+    const ngramCandidates = this._extractNgrams(sentences, 2, 4);
     
-    // Limitar al máximo de conceptos
+    // Estrategia 3: Identificar sujetos y objetos de oraciones (análisis sintáctico básico)
+    const syntacticElements = this._extractSyntacticElements(sentences);
+    
+    // Combinar resultados de las distintas estrategias
+    const uniqueConcepts = new Map();
+    
+    // Agregar palabras individuales frecuentes
+    const sortedWords = Object.entries(wordCount)
+      .filter(([word]) => !/^\d+$/.test(word)) // Excluir números
+      .sort((a, b) => b[1] - a[1]); // Ordenar por frecuencia
+    
+    // Seleccionar el 60% del máximo de conceptos para palabras simples
+    const maxSingleWords = Math.floor((options.maxConcepts || 20) * 0.6);
+    sortedWords.slice(0, maxSingleWords).forEach(([word, count]) => {
+      const conceptId = `concept_${uniqueConcepts.size + 1}`;
+      uniqueConcepts.set(word, {
+        id: conceptId,
+        name: word.charAt(0).toUpperCase() + word.slice(1).toLowerCase(),
+        frequency: count,
+        type: 'word',
+        importance: count / sortedWords[0][1] // Normalizar por la palabra más frecuente
+      });
+    });
+    
+    // Agregar frases compuestas
+    const sortedNgrams = Array.from(ngramCandidates.entries())
+      .sort((a, b) => b[1].score - a[1].score);
+    
+    // Seleccionar el 30% para n-gramas
+    const maxNgrams = Math.floor((options.maxConcepts || 20) * 0.3);
+    sortedNgrams.slice(0, maxNgrams).forEach(([phrase, data]) => {
+      if (!uniqueConcepts.has(phrase.toLowerCase())) {
+        const conceptId = `concept_${uniqueConcepts.size + 1}`;
+        uniqueConcepts.set(phrase.toLowerCase(), {
+          id: conceptId,
+          name: phrase.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' '),
+          frequency: data.count,
+          type: 'phrase',
+          importance: 0.7 + (data.score / sortedNgrams[0][1].score) * 0.3, // Priorizar frases
+          context: data.context
+        });
+      }
+    });
+    
+    // Agregar elementos sintácticos significativos
+    const sortedSyntactic = syntacticElements
+      .sort((a, b) => b.score - a.score);
+    
+    // Seleccionar el 10% para elementos sintácticos
+    const maxSyntactic = Math.floor((options.maxConcepts || 20) * 0.1);
+    sortedSyntactic.slice(0, maxSyntactic).forEach(element => {
+      const lowercaseElement = element.text.toLowerCase();
+      if (!uniqueConcepts.has(lowercaseElement)) {
+        const conceptId = `concept_${uniqueConcepts.size + 1}`;
+        uniqueConcepts.set(lowercaseElement, {
+          id: conceptId,
+          name: element.text.charAt(0).toUpperCase() + element.text.slice(1).toLowerCase(),
+          frequency: element.count,
+          type: element.type,
+          importance: 0.8, // Alta importancia para elementos sintácticos
+          role: element.role,
+          context: element.context
+        });
+      }
+    });
+    
+    // Limitar al máximo de conceptos especificado
     const maxConcepts = options.maxConcepts || 20;
-    const selectedWords = sortedWords.slice(0, maxConcepts);
+    let conceptsArray = Array.from(uniqueConcepts.values()).slice(0, maxConcepts);
     
-    // Crear conceptos
-    return selectedWords.map((word, index) => {
+    // Enriquecer conceptos con descripciones e información contextual
+    conceptsArray = conceptsArray.map(concept => {
       // Buscar contexto en las oraciones
       const relevantSentences = sentences.filter(sentence => 
-        sentence.toLowerCase().includes(word.toLowerCase())
+        sentence.toLowerCase().includes(concept.name.toLowerCase())
       );
       
       // Crear descripción a partir del contexto
       const description = relevantSentences.length > 0 
         ? relevantSentences[0].trim()
-        : `Concepto relacionado con "${word}"`;
+        : `Concepto relacionado con "${concept.name}"`;
+      
+      // Detectar definiciones explícitas
+      const definitionSentence = this._findDefinitionSentence(relevantSentences, concept.name);
+      
+      // Encontrar posibles relaciones con otros conceptos
+      const relatedConceptIds = this._findPotentialRelationships(concept, conceptsArray, sentences);
+      
+      // Determinar jerarquía basada en co-ocurrencia y patrones lingüísticos
+      const hierarchyRelation = this._detectHierarchyRelations(concept, conceptsArray, sentences);
       
       return {
-        id: `concept_${index + 1}`,
-        name: word.charAt(0).toUpperCase() + word.slice(1),
-        importance: 1 - (index / selectedWords.length),
-        frequency: wordCount[word],
-        description: description,
-        originalForm: word,
-        category: this._inferSimpleCategory(word, relevantSentences)
+        ...concept,
+        description: definitionSentence || description,
+        category: this._inferSimpleCategory(concept.name, relevantSentences),
+        childrenIds: relatedConceptIds,
+        hierarchyRelation,
+        originalForm: concept.name.toLowerCase(),
+        // Determinar nivel jerárquico preliminar basado en el tipo y las relaciones
+        hierarchyLevel: hierarchyRelation === 'parent' ? 0 : 
+                       hierarchyRelation === 'child' ? 2 : 1
       };
     });
+    
+    // Identificar el concepto principal (tema del texto)
+    const mainConcept = this._identifyMainConcept(conceptsArray, paragraphs);
+    if (mainConcept) {
+      // Marcar el concepto principal
+      const mainConceptIndex = conceptsArray.findIndex(c => c.id === mainConcept.id);
+      if (mainConceptIndex >= 0) {
+        conceptsArray[mainConceptIndex] = {
+          ...conceptsArray[mainConceptIndex],
+          isMainConcept: true,
+          importance: 1.0, // Máxima importancia
+          hierarchyLevel: 0 // Nivel superior en la jerarquía
+        };
+      }
+      
+      // Reorganizar para que el concepto principal esté al principio
+      if (mainConceptIndex > 0) {
+        const [main] = conceptsArray.splice(mainConceptIndex, 1);
+        conceptsArray = [main, ...conceptsArray];
+      }
+    }
+    
+    return conceptsArray;
   }
   
   /**
-   * Infiere una categoría simple para un concepto
-   * @param {string} word - Palabra a categorizar
-   * @param {Array} sentences - Oraciones relevantes
-   * @returns {string} - Categoría inferida
+   * Extrae n-gramas (frases de múltiples palabras) del texto
+   * @param {Array} sentences - Oraciones del texto
+   * @param {number} minSize - Tamaño mínimo del n-grama
+   * @param {number} maxSize - Tamaño máximo del n-grama
+   * @returns {Map} - Mapa de n-gramas con su puntuación
    * @private
    */
-  _inferSimpleCategory(word, sentences) {
-    // Lista de palabras clave para diferentes categorías
-    const categoryKeywords = {
-      'proceso': ['es un proceso', 'consiste en', 'se realiza', 'implica', 'funciona'],
-      'objeto': ['es un objeto', 'es una herramienta', 'se utiliza', 'sirve para'],
-      'persona': ['persona', 'profesional', 'usuario', 'cliente', 'humano'],
-      'concepto': ['significa', 'se refiere', 'es un concepto', 'teoría'],
-      'lugar': ['lugar', 'ubicación', 'sitio', 'zona', 'región', 'país']
-    };
+  _extractNgrams(sentences, minSize = 2, maxSize = 4) {
+    const ngrams = new Map();
+    const stopWords = ['de', 'la', 'el', 'en', 'y', 'a', 'que', 'los', 'del', 'las', 'un', 'por', 'con', 'una', 'su', 'para'];
     
-    // Buscar coincidencias en las oraciones
-    for (const sentence of sentences) {
-      const lowerSentence = sentence.toLowerCase();
+    sentences.forEach(sentence => {
+      const words = sentence.split(/\s+/).map(w => w.toLowerCase().replace(/[.,;:!?()[\]{}'"]/g, ''));
       
-      for (const [category, keywords] of Object.entries(categoryKeywords)) {
-        for (const keyword of keywords) {
-          if (lowerSentence.includes(keyword)) {
-            return category;
+      // Generar n-gramas de diferentes tamaños
+      for (let size = minSize; size <= maxSize; size++) {
+        for (let i = 0; i <= words.length - size; i++) {
+          const ngram = words.slice(i, i + size).join(' ');
+          
+          // Filtrar n-gramas que comienzan o terminan con stopwords
+          if (stopWords.includes(words[i]) || stopWords.includes(words[i + size - 1])) {
+            continue;
           }
+          
+          // Filtrar n-gramas demasiado cortos o que no tienen sentido
+          if (ngram.length < 5) {
+            continue;
+          }
+          
+          // Actualizar el contador y contexto
+          if (ngrams.has(ngram)) {
+            const data = ngrams.get(ngram);
+            data.count++;
+            // Actualizar puntuación basada en frecuencia y longitud
+            data.score = data.count * (size / maxSize + 0.5);
+            // Guardar contexto si es mejor que el anterior
+            if (sentence.length > data.context.length) {
+              data.context = sentence;
+            }
+          } else {
+            ngrams.set(ngram, {
+              count: 1,
+              size,
+              score: 1 * (size / maxSize + 0.5), // Favorecer ligeramente n-gramas más largos
+              context: sentence
+            });
+          }
+        }
+      }
+    });
+    
+    return ngrams;
+  }
+  
+  /**
+   * Extrae elementos sintácticos clave de las oraciones
+   * @param {Array} sentences - Oraciones del texto
+   * @returns {Array} - Elementos sintácticos identificados
+   * @private
+   */
+  _extractSyntacticElements(sentences) {
+    const elements = [];
+    const elementCount = new Map();
+    
+    // Patrones simples para identificar elementos sintácticos
+    const subjectPatterns = [
+      /^(.+?)(es|son|está|están|puede|pueden|debe|deben|ha|han|tiene|tienen)/i,
+      /(.+?)(se define como)/i,
+      /(.+?)(se refiere a)/i
+    ];
+    
+    const objectPatterns = [
+      /(se conoce|se denomina|se llama|es conocido como)(.+?)$/i,
+      /(consiste en|consta de|incluye a|contiene|abarca)(.+?)$/i
+    ];
+    
+    sentences.forEach(sentence => {
+      // Buscar sujetos
+      for (const pattern of subjectPatterns) {
+        const match = sentence.match(pattern);
+        if (match && match[1]) {
+          const subject = match[1].trim();
+          if (subject.length > 3 && subject.split(/\s+/).length <= 4) {
+            const key = subject.toLowerCase();
+            elementCount.set(key, (elementCount.get(key) || 0) + 1);
+            elements.push({
+              text: subject,
+              type: 'subject',
+              role: 'concept',
+              count: elementCount.get(key),
+              score: elementCount.get(key) * 1.5, // Mayor peso a sujetos
+              context: sentence
+            });
+          }
+        }
+      }
+      
+      // Buscar objetos
+      for (const pattern of objectPatterns) {
+        const match = sentence.match(pattern);
+        if (match && match[2]) {
+          const object = match[2].trim();
+          if (object.length > 3 && object.split(/\s+/).length <= 4) {
+            const key = object.toLowerCase();
+            elementCount.set(key, (elementCount.get(key) || 0) + 1);
+            elements.push({
+              text: object,
+              type: 'object',
+              role: 'definition',
+              count: elementCount.get(key),
+              score: elementCount.get(key) * 1.2, // Peso a objetos
+              context: sentence
+            });
+          }
+        }
+      }
+    });
+    
+    // Eliminar duplicados manteniendo la mejor puntuación
+    const uniqueElements = [];
+    const seen = new Set();
+    
+    elements.forEach(element => {
+      const key = `${element.text.toLowerCase()}_${element.type}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        uniqueElements.push(element);
+      }
+    });
+    
+    return uniqueElements;
+  }
+  
+  /**
+   * Encuentra una oración que defina explícitamente el concepto
+   * @param {Array} sentences - Oraciones relevantes
+   * @param {string} conceptName - Nombre del concepto
+   * @returns {string|null} - Oración de definición encontrada o null
+   * @private
+   */
+  _findDefinitionSentence(sentences, conceptName) {
+    // Patrones de definición
+    const definitionPatterns = [
+      new RegExp(`${conceptName}\\s+(es|son|está|están|se define como|significa|representa)`, 'i'),
+      new RegExp(`(el|la|los|las)\\s+${conceptName}\\s+(es|son|está|están|se define como|significa|representa)`, 'i'),
+      new RegExp(`(se entiende por|se denomina|se conoce como)\\s+${conceptName}`, 'i')
+    ];
+    
+    for (const sentence of sentences) {
+      for (const pattern of definitionPatterns) {
+        if (pattern.test(sentence)) {
+          return sentence.trim();
         }
       }
     }
     
-    // Categoría por defecto
-    return 'concepto';
+    return null;
+  }
+  
+  /**
+   * Identifica relaciones potenciales entre conceptos
+   * @param {Object} concept - Concepto principal
+   * @param {Array} allConcepts - Todos los conceptos extraídos
+   * @param {Array} sentences - Oraciones del texto
+   * @returns {Array} - IDs de conceptos relacionados
+   * @private
+   */
+  _findPotentialRelationships(concept, allConcepts, sentences) {
+    const relatedIds = [];
+    const conceptName = concept.name.toLowerCase();
+    
+    // Encontrar co-ocurrencias en oraciones
+    const conceptOccurrences = sentences.filter(sentence => 
+      sentence.toLowerCase().includes(conceptName)
+    );
+    
+    allConcepts.forEach(otherConcept => {
+      // Evitar relaciones reflexivas
+      if (otherConcept.id === concept.id) return;
+      
+      const otherName = otherConcept.name.toLowerCase();
+      let relationStrength = 0;
+      
+      // Verificar co-ocurrencia en las mismas oraciones
+      conceptOccurrences.forEach(sentence => {
+        if (sentence.toLowerCase().includes(otherName)) {
+          relationStrength += 1;
+        }
+      });
+      
+      // Verificar si hay una relación jerárquica (contenido léxico)
+      if (conceptName.includes(otherName) || otherName.includes(conceptName)) {
+        relationStrength += 2;
+      }
+      
+      // Si hay suficiente evidencia de relación, agregar a la lista
+      if (relationStrength >= 1) {
+        relatedIds.push(otherConcept.id);
+      }
+    });
+    
+    // Limitar a máximo 5 relaciones
+    return relatedIds.slice(0, 5);
+  }
+  
+  /**
+   * Detecta relaciones jerárquicas entre conceptos
+   * @param {Object} concept - Concepto a analizar
+   * @param {Array} allConcepts - Todos los conceptos
+   * @param {Array} sentences - Oraciones del texto
+   * @returns {string} - Tipo de relación: 'parent', 'child' o 'sibling'
+   * @private
+   */
+  _detectHierarchyRelations(concept, allConcepts, sentences) {
+    const conceptName = concept.name.toLowerCase();
+    
+    // Buscar patrones explícitos de jerarquía
+    for (const sentence of sentences) {
+      const lowerSentence = sentence.toLowerCase();
+      
+      // Patrones donde el concepto es un padre (más general)
+      const parentPatterns = [
+        `${conceptName} incluye`,
+        `${conceptName} contiene`,
+        `${conceptName} abarca`,
+        `${conceptName} comprende`,
+        `tipos de ${conceptName}`,
+        `clases de ${conceptName}`,
+        `${conceptName} se divide en`
+      ];
+      
+      // Patrones donde el concepto es un hijo (más específico)
+      const childPatterns = [
+        `parte de ${conceptName}`,
+        `incluido en ${conceptName}`,
+        `pertenece a ${conceptName}`,
+        `tipo de ${conceptName}`,
+        `clase de ${conceptName}`,
+        `${conceptName} es un tipo de`,
+        `${conceptName} es una clase de`
+      ];
+      
+      // Verificar patrones de padre
+      for (const pattern of parentPatterns) {
+        if (lowerSentence.includes(pattern)) {
+          return 'parent';
+        }
+      }
+      
+      // Verificar patrones de hijo
+      for (const pattern of childPatterns) {
+        if (lowerSentence.includes(pattern)) {
+          return 'child';
+        }
+      }
+    }
+    
+    // Si no hay patrones explícitos, usar heurísticas
+    // Por ejemplo, conceptos más cortos tienden a ser más generales (padres)
+    if (concept.type === 'word' && concept.frequency > 10) {
+      return 'parent';
+    }
+    
+    // Los conceptos más complejos tienden a ser más específicos (hijos)
+    if (concept.type === 'phrase' && conceptName.split(' ').length > 2) {
+      return 'child';
+    }
+    
+    // Por defecto, considerar como hermano (mismo nivel)
+    return 'sibling';
+  }
+  
+  /**
+   * Identifica el concepto principal/tema del texto
+   * @param {Array} concepts - Conceptos extraídos
+   * @param {Array} paragraphs - Párrafos del texto
+   * @returns {Object|null} - Concepto principal o null
+   * @private
+   */
+  _identifyMainConcept(concepts, paragraphs) {
+    // Estrategia 1: Buscar conceptos mencionados en el primer párrafo
+    if (paragraphs.length > 0) {
+      const firstParagraph = paragraphs[0].toLowerCase();
+      const candidatesInFirst = concepts.filter(concept => 
+        firstParagraph.includes(concept.name.toLowerCase())
+      );
+      
+      if (candidatesInFirst.length > 0) {
+        // Preferir conceptos con mayor frecuencia entre los del primer párrafo
+        return candidatesInFirst.sort((a, b) => b.frequency - a.frequency)[0];
+      }
+    }
+    
+    // Estrategia 2: Concepto más frecuente y con más relaciones
+    return concepts
+      .map(concept => ({
+        ...concept,
+        score: (concept.frequency || 0) * 2 + (concept.childrenIds?.length || 0) * 3
+      }))
+      .sort((a, b) => b.score - a.score)[0] || null;
   }
   
   /**
@@ -347,6 +717,12 @@ class OrganizationModule extends BaseModule {
     const rootIds = hierarchyData.roots || [];
     const hierarchyMap = new Map();
     
+    // Asegurarnos de que tenemos al menos un concepto raíz
+    if (rootIds.length === 0 && concepts.length > 0) {
+      // Si no hay raíces definidas, usar el primer concepto como raíz
+      rootIds.push(concepts[0].id);
+    }
+    
     // Función recursiva para asignar niveles
     const assignLevel = (conceptId, level = 1, path = []) => {
       // Evitar ciclos
@@ -355,17 +731,50 @@ class OrganizationModule extends BaseModule {
       const concept = concepts.find(c => c.id === conceptId);
       if (!concept) return;
       
-      // Asignar nivel si es mayor que el actual
-      if (!concept.hierarchyLevel || concept.hierarchyLevel < level) {
-        concept.hierarchyLevel = level;
-      }
+      // Asignar nivel
+      concept.hierarchyLevel = level;
       
       hierarchyMap.set(conceptId, level);
       
-      // Procesar hijos
-      const children = concept.childrenIds || [];
+      // Procesar hijos - buscar explícitamente en childrenIds y también en relaciones
+      let children = concept.childrenIds || [];
+      
+      // Buscar más hijos en las relaciones entre conceptos (si existen)
+      const hierarchicalRelTypes = ['contiene', 'incluye', 'compuesto por', 'tiene', 'parte de', 'tipo de'];
+      const additionalChildren = [];
+      
+      if (hierarchyData.relationships) {
+        hierarchyData.relationships.forEach(rel => {
+          if (rel.sourceId === conceptId && 
+              hierarchicalRelTypes.some(type => rel.type && rel.type.toLowerCase().includes(type))) {
+            if (!children.includes(rel.targetId)) {
+              additionalChildren.push(rel.targetId);
+            }
+          }
+        });
+      }
+      
+      children = [...children, ...additionalChildren];
+      
+      // Si no hay hijos explícitos, intentar inferir basado en similaridad
+      if (children.length === 0) {
+        // Intentar encontrar conceptos relacionados que podrían ser hijos
+        const potentialChildren = concepts.filter(c => 
+          c.id !== conceptId && 
+          !hierarchyMap.has(c.id) && 
+          this._areConceptsRelated(concept, c)
+        );
+        
+        // Limitar a máximo 5 hijos inferidos para evitar una estructura demasiado ancha
+        children = potentialChildren.slice(0, 5).map(c => c.id);
+      }
+      
+      // Actualizar concepto con los hijos encontrados
+      concept.childrenIds = children;
+      
       const newPath = [...path, conceptId];
       
+      // Procesar cada hijo recursivamente
       for (const childId of children) {
         assignLevel(childId, level + 1, newPath);
       }
@@ -377,16 +786,88 @@ class OrganizationModule extends BaseModule {
     }
     
     // Asegurar que todos los conceptos tengan un nivel
-    for (const concept of concepts) {
-      if (!concept.hierarchyLevel) {
-        concept.hierarchyLevel = 1; // Nivel por defecto
+    let unassignedConcepts = concepts.filter(c => !c.hierarchyLevel);
+    
+    // Asignar conceptos no asignados a niveles adecuados
+    if (unassignedConcepts.length > 0) {
+      console.log(`Asignando ${unassignedConcepts.length} conceptos sin nivel jerárquico`);
+      
+      // Asignar niveles a conceptos huérfanos
+      let currentLevel = 2; // Empezar en nivel 2 (después de las raíces)
+      
+      while (unassignedConcepts.length > 0 && currentLevel <= 5) {
+        const conceptsForThisLevel = Math.ceil(unassignedConcepts.length / (6 - currentLevel));
+        
+        // Tomar los N conceptos para este nivel
+        const batch = unassignedConcepts.splice(0, conceptsForThisLevel);
+        
+        // Asignar nivel
+        batch.forEach(concept => {
+          concept.hierarchyLevel = currentLevel;
+        });
+        
+        currentLevel++;
       }
       
-      // Añadir indicador de importancia basado en nivel jerárquico
-      concept.importance = this._calculateImportance(concept.hierarchyLevel, concepts.length);
+      // Si quedan conceptos sin asignar, ponerlos en el último nivel
+      unassignedConcepts.forEach(concept => {
+        concept.hierarchyLevel = currentLevel - 1;
+      });
+    }
+    
+    // Calcular y asignar importancia basada en nivel jerárquico
+    for (const concept of concepts) {
+      // Niveles más bajos (más cercanos a la raíz) son más importantes
+      const importanceValue = this._calculateImportance(concept.hierarchyLevel, concepts.length);
+      
+      if (importanceValue > 0.7) {
+        concept.importance = 'high';
+      } else if (importanceValue > 0.4) {
+        concept.importance = 'medium';
+      } else {
+        concept.importance = 'low';
+      }
     }
     
     return concepts;
+  }
+  
+  /**
+   * Determina si dos conceptos están relacionados semánticamente
+   * @param {Object} concept1 - Primer concepto
+   * @param {Object} concept2 - Segundo concepto
+   * @returns {boolean} - Verdadero si están relacionados
+   * @private
+   */
+  _areConceptsRelated(concept1, concept2) {
+    // Comprobar si los nombres son similares
+    if (concept1.name.toLowerCase().includes(concept2.name.toLowerCase()) || 
+        concept2.name.toLowerCase().includes(concept1.name.toLowerCase())) {
+      return true;
+    }
+    
+    // Comprobar si comparten categoría
+    if (concept1.category && concept2.category && 
+        concept1.category === concept2.category) {
+      return true;
+    }
+    
+    // Comprobar similitud en descripciones si existen
+    if (concept1.description && concept2.description) {
+      const words1 = concept1.description.toLowerCase().split(/\s+/);
+      const words2 = concept2.description.toLowerCase().split(/\s+/);
+      
+      // Contar palabras comunes
+      const commonWords = words1.filter(word => 
+        word.length > 3 && words2.includes(word)
+      );
+      
+      if (commonWords.length >= 2) {
+        return true;
+      }
+    }
+    
+    return false;
   }
   
   /**

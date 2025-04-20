@@ -723,3 +723,159 @@ footer {
     justify-content: space-between;
   }
 }
+
+/* Mejorar estilos para la visualización del mapa conceptual */
+#diagramContainer {
+  width: 100%;
+  height: 600px;
+  min-height: 500px;
+  padding: 20px;
+  background-color: var(--bg-color);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  overflow: auto;
+  margin-bottom: 20px;
+  position: relative;
+}
+
+#diagramContainer.loading::before {
+  content: "Cargando mapa conceptual...";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: var(--text-light);
+  font-size: 1.25rem;
+  text-align: center;
+}
+
+.concept-map-visual {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Mejoras para los contenedores de markmap */
+.markmap svg {
+  width: 100% !important;
+  height: 600px !important;
+  min-height: 500px !important;
+}
+
+/* Garantizar que los nodos de markdown están bien visualizados */
+.markmap-node {
+  cursor: pointer;
+}
+
+.markmap-node-circle {
+  fill: var(--primary-color);
+  stroke: var(--primary-hover);
+  stroke-width: 1.5px;
+}
+
+.markmap-node-text {
+  fill: var(--text-color);
+  font-family: var(--font-sans);
+  font-size: 14px;
+}
+
+.markmap-link {
+  fill: none;
+  stroke: var(--text-light);
+  stroke-width: 1.5px;
+}
+
+/* Mejorar visualización del contenedor de Mermaid */
+.mermaid-diagram {
+  width: 100%;
+  min-height: 600px;
+  overflow: auto;
+}
+
+/* Mejorar visualización para D3 */
+#d3-concept-map {
+  width: 100%;
+  height: 600px;
+  min-height: 500px;
+}
+
+/* Garantizar que el contenedor de output sea lo suficientemente grande */
+#output-tab .output-container {
+  padding: 20px;
+  height: 100%;
+  min-height: 700px;
+  overflow: auto;
+}
+
+/* Añadir estilos de fallback para casos donde los mapas no se pueden renderizar */
+.fallback-visualization {
+  width: 100%;
+  padding: 20px;
+  background-color: var(--bg-light);
+  border-radius: var(--radius-md);
+  border: 1px dashed var(--border-color);
+}
+
+.concepts-table {
+  margin-top: 20px;
+}
+
+/* Mejorar estilos para los estados de carga y mensajes de error */
+.alert {
+  padding: 15px;
+  margin-bottom: 20px;
+  border-radius: var(--radius-md);
+  position: relative;
+}
+
+.alert-warning {
+  background-color: #fff8e6;
+  border-left: 4px solid var(--secondary-color);
+  color: #805b10;
+}
+
+.alert-danger {
+  background-color: #fee2e2;
+  border-left: 4px solid var(--error-color);
+  color: #b91c1c;
+}
+
+.alert-success {
+  background-color: #ecfdf5;
+  border-left: 4px solid var(--success-color);
+  color: #065f46;
+}
+
+/* Indicador de carga global mejorado */
+.loader-container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(255, 255, 255, 0.7);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 9999;
+  backdrop-filter: blur(3px);
+}
+
+.loader {
+  width: 60px;
+  height: 60px;
+  border: 5px solid rgba(79, 70, 229, 0.2);
+  border-radius: 50%;
+  border-top: 5px solid var(--primary-color);
+  animation: spin 1s linear infinite;
+}
+
+.loader-text {
+  position: absolute;
+  top: calc(50% + 40px);
+  font-weight: 500;
+  color: var(--primary-color);
+}
